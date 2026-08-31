@@ -8,12 +8,9 @@
 
 // ---------- Utils ----------
 function generateRoomCode(){
-  const ADJ = ['amber','coral','cosmic','velvet','lunar','ember','misty','golden','quiet','wandering','hazy','soft'];
-  const NOUN = ['otter','comet','harbor','ember','willow','falcon','tide','maple','nova','drift','ridge','lark'];
-  const a = ADJ[Math.floor(Math.random()*ADJ.length)];
-  const n = NOUN[Math.floor(Math.random()*NOUN.length)];
-  const num = Math.floor(Math.random()*90+10);
-  return `${a}-${n}-${num}`;
+  const bytes = new Uint8Array(12);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
 }
 function nameColor(name){
   let hash=0;
@@ -85,12 +82,13 @@ function initPeer(customId){
   peer.on('error', err=>{
     console.error('Peer error:', err);
     if (err.type === 'peer-unavailable'){
-      if (window.onPeerError) window.onPeerError("That room code doesn't seem to be active. Double check it with whoever's hosting.");
+      showLandingStatus("That room code doesn't seem to be active. Double check it with whoever's hosting.", true);
     } else if (err.type === 'unavailable-id'){
-      if (window.onPeerError) window.onPeerError("That room just got taken — trying again…");
+      showLandingStatus("That room id was just taken — picking a new one…");
+      // try again with a new random id (or just initPeer() to let Peer pick a random id)
       setTimeout(()=>initPeer(), 200);
     } else {
-      if (window.onPeerError) window.onPeerError(String(err.type||err));
+      showLandingStatus(String(err), true);
     }
   });
 }
