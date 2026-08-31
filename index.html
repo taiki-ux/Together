@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Together — watch, listen, play</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;0,700;1,500&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ================= SPLASH (5s, no skip) ================= -->
+<div id="screen-splash">
+  <div class="splash-ring"></div>
+  <div class="splash-ring r2"></div>
+  <div class="splash-content">
+    <h1 class="splash-title">Together</h1>
+    <div class="splash-sub">enjoy · made by <b>Taiki Ryuzaki</b></div>
+  </div>
+</div>
+
+<!-- ================= LANDING ================= -->
+<div id="screen-landing">
+  <div class="landing-card">
+    <div class="eyebrow">watch · listen · play</div>
+    <h1>Together</h1>
+    <p class="sub">Sync a video, put on music, or play a game — with whoever's far away tonight.</p>
+
+    <div class="field">
+      <label>Your name</label>
+      <input type="text" id="input-name" placeholder="e.g. Ryu" maxlength="20">
+    </div>
+
+    <div class="split">
+      <div class="option-box">
+        <h3>🎬 Start a room</h3>
+        <p class="hint">You'll get a room code to share.</p>
+        <button class="btn btn-primary btn-block" id="btn-create">Create room</button>
+      </div>
+      <div class="option-box">
+        <h3>🔗 Join a room</h3>
+        <input type="text" id="input-roomcode" placeholder="room code">
+        <button class="btn btn-secondary btn-block" id="btn-join">Join room</button>
+      </div>
+    </div>
+
+    <div id="landing-status"></div>
+  </div>
+</div>
+
+<!-- ================= ROOM ================= -->
+<div id="screen-room">
+
+  <!-- Entry gate: choice only, no chat / voice / menu / settings -->
+  <div id="entry-hub">
+    <div class="entry-topline">
+      <div class="roomcode-pill">
+        <span>Room</span>
+        <span class="code mono" id="entry-room-code">—</span>
+        <button class="icon-btn" id="entry-btn-copy" title="Copy room code">⧉</button>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="entry-btn-leave">Leave</button>
+    </div>
+    <h2>What are we doing tonight?</h2>
+    <p class="sub">Pick something to get started.</p>
+    <div class="hub-grid">
+      <div class="hub-card" data-mode="video">
+        <div class="emoji">🎬</div>
+        <h3>Watch videos</h3>
+        <p>Sync a YouTube video for the group</p>
+      </div>
+      <div class="hub-card" data-mode="music">
+        <div class="emoji">🎵</div>
+        <h3>Listen to music</h3>
+        <p>Put a track on together, chat while it plays</p>
+      </div>
+      <div class="hub-card" data-mode="games">
+        <div class="emoji">🎮</div>
+        <h3>Play games</h3>
+        <p>Trivia, party games &amp; duels</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Activity shell: appears once a mode is chosen -->
+  <div id="activity-shell">
+    <div class="topbar">
+      <div class="brand"><span class="brand-dot"></span><span>Together</span></div>
+      <div class="mode-nav">
+        <button class="nav-btn" data-mode="video">🎬 Watch</button>
+        <button class="nav-btn" data-mode="music">🎵 Music</button>
+        <button class="nav-btn" data-mode="games">🎮 Play</button>
+      </div>
+      <div class="topbar-right">
+        <div class="roomcode-pill">
+          <span>Room</span>
+          <span class="code mono" id="room-code-display">—</span>
+          <button class="icon-btn" id="btn-copy" title="Copy room code">⧉</button>
+        </div>
+        <button class="icon-btn" id="btn-settings" title="Settings">⚙</button>
+        <button class="btn btn-ghost btn-sm" id="btn-leave">Leave</button>
+      </div>
+    </div>
+
+    <div class="room-body">
+      <div class="main-col">
+
+        <!-- VIDEO -->
+        <div class="pane" id="pane-video">
+          <div class="video-frame">
+            <div id="yt-player-video"></div>
+            <div class="video-placeholder" id="video-placeholder">
+              <div class="glow">▶</div>
+              <div>Paste a YouTube link below to start the night</div>
+            </div>
+          </div>
+          <div class="load-row">
+            <input type="text" id="input-video-url" placeholder="Paste a YouTube URL or video ID…">
+            <button class="btn btn-primary" id="btn-load-video">Load</button>
+          </div>
+          <div class="controls-row">
+            <button class="btn btn-ghost btn-sm" id="btn-play-video">▶ Play</button>
+            <button class="btn btn-ghost btn-sm" id="btn-pause-video">⏸ Pause</button>
+            <button class="btn btn-ghost btn-sm" id="btn-sync-video">🔄 Sync everyone to me</button>
+            <button class="btn btn-ghost btn-sm" id="btn-fullscreen">⛶ Full screen</button>
+            <div class="seek-group">
+              <span class="hint">Jump to</span>
+              <input type="text" id="input-seek-video" placeholder="1:23">
+              <button class="btn btn-ghost btn-sm" id="btn-seek-video">Go</button>
+            </div>
+          </div>
+          <p class="hint">Synced to the whole room automatically. This mode is voice-only — the chat panel is reserved for Music, so everyone stays focused on the screen.</p>
+        </div>
+
+        <!-- MUSIC -->
+        <div class="pane" id="pane-music">
+          <div class="music-card">
+            <div class="vinyl" id="vinyl"></div>
+            <div class="music-meta">
+              <div class="label">Now playing, together</div>
+              <h3 id="music-title">Nothing queued yet</h3>
+              <div class="bars" id="music-bars"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            </div>
+            <div class="music-yt" id="yt-player-music"></div>
+          </div>
+
+          <div class="load-row">
+            <input type="text" id="input-music-url" placeholder="Paste a YouTube or Spotify link…">
+            <button class="btn btn-violet" id="btn-load-music">Play</button>
+          </div>
+          <div class="controls-row" id="music-sync-controls">
+            <button class="btn btn-ghost btn-sm" id="btn-play-music">▶ Play</button>
+            <button class="btn btn-ghost btn-sm" id="btn-pause-music">⏸ Pause</button>
+            <button class="btn btn-ghost btn-sm" id="btn-sync-music">🔄 Sync everyone to me</button>
+            <div class="seek-group">
+              <span class="hint">Jump to</span>
+              <input type="text" id="input-seek-music" placeholder="1:23">
+              <button class="btn btn-ghost btn-sm" id="btn-seek-music">Go</button>
+            </div>
+          </div>
+
+          <div class="divider-or">or</div>
+
+          <div class="local-audio-row">
+            <input type="file" id="input-local-file" accept="audio/*" style="display:none;">
+            <button class="btn btn-ghost btn-sm" id="btn-pick-local">📂 Play a file from your device</button>
+            <span class="hint">Local files only play for you — for a synced group listen, paste a link above.</span>
+          </div>
+          <audio id="local-audio-player" controls style="width:100%; display:none;"></audio>
+
+          <p class="hint">Same sync engine as the video room. Chat's open here — type freely, or mention <b>@ai</b> for a joke or a recommendation.</p>
+        </div>
+
+        <!-- GAMES -->
+        <div class="pane" id="pane-games">
+          <div id="games-picker">
+            <div class="game-grid">
+              <div class="game-card" data-game="trivia"><div class="emoji">🧠</div><h3>Trivia Night</h3><p>Answer together, race the clock, climb the scoreboard</p></div>
+              <div class="game-card" data-game="wyr"><div class="emoji">🤔</div><h3>Would You Rather</h3><p>Vote live and see how everyone answered</p></div>
+              <div class="game-card" data-game="ttt"><div class="emoji">❌⭕</div><h3>Tic-Tac-Toe Duel</h3><p>Challenge someone in the room 1-on-1</p></div>
+            </div>
+            <p class="hint" style="margin-top:14px;">This mode is voice-only too — call out your answers instead of typing them!</p>
+          </div>
+
+          <div class="game-panel" id="game-trivia" style="display:none;">
+            <button class="back-link" data-back-game>← Games</button>
+            <div id="trivia-body">
+              <p class="hint">Everyone answers, then it reveals after 10 seconds.</p>
+              <button class="btn btn-primary" id="btn-trivia-start">Start Trivia</button>
+            </div>
+          </div>
+
+          <div class="game-panel" id="game-wyr" style="display:none;">
+            <button class="back-link" data-back-game>← Games</button>
+            <div id="wyr-body">
+              <p class="hint">Pick a side and watch how the room votes, live.</p>
+              <button class="btn btn-violet" id="btn-wyr-start">Start</button>
+            </div>
+          </div>
+
+          <div class="game-panel" id="game-ttt" style="display:none;">
+            <button class="back-link" data-back-game>← Games</button>
+            <div id="ttt-body">
+              <p class="hint">Pick someone in the room to challenge.</p>
+              <div class="ttt-opponents" id="ttt-opponent-list"></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="side-col">
+        <div class="constellation">
+          <h4 id="participant-count">In the room</h4>
+          <div class="orbit" id="orbit"></div>
+          <div class="mic-row">
+            <button class="btn btn-secondary btn-sm" id="btn-mic" style="flex:1;">🎤 Join voice</button>
+          </div>
+          <div id="chat-toggle-wrap">
+            <button class="btn btn-ghost btn-sm btn-block" id="btn-chat-toggle">💬 Open chat</button>
+          </div>
+        </div>
+        <div class="chat-col" id="chat-col">
+          <div class="chat-log" id="chat-log"></div>
+          <p class="chat-hint">Tip: mention <b>@ai</b> for a joke, a movie pick, or a song pick.</p>
+          <div class="chat-input-row">
+            <input type="text" id="input-chat" placeholder="Say something…" maxlength="500">
+            <button class="btn btn-primary" id="btn-send">Send</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= SETTINGS ================= -->
+<div id="settings-overlay">
+  <div class="settings-modal">
+    <h2>Settings</h2>
+
+    <div class="settings-row"><div><div class="lbl">Your name</div></div></div>
+    <div class="field" style="margin:6px 0 14px;"><input type="text" id="input-rename" maxlength="20"></div>
+    <button class="btn btn-ghost btn-block btn-sm" id="btn-rename-save" style="margin-bottom:6px;">Save name</button>
+
+    <div class="settings-row"><div><div class="lbl">Microphone</div><div class="desc">Choose which mic to use for voice</div></div></div>
+    <select id="select-mic" style="margin:6px 0 4px;"></select>
+
+    <div class="settings-row">
+      <div><div class="lbl">Chat sound</div><div class="desc">Play a sound for new messages</div></div>
+      <div class="toggle on" id="toggle-sound"></div>
+    </div>
+    <div class="settings-row">
+      <div><div class="lbl">Auto-sync</div><div class="desc">Automatically correct drift for video &amp; music</div></div>
+      <div class="toggle on" id="toggle-autosync"></div>
+    </div>
+
+    <div class="settings-roadmap">
+      🚧 Coming later: playlists, saved rooms, Spotify sign-in, and accounts (sign up / log in). The @ai buddy is currently a scripted joke &amp; recommendation bot — a real connected AI needs a backend to hold an API key safely, which lands alongside accounts.
+    </div>
+
+    <div class="settings-about"><b>Together</b> — made by <b>Taiki Ryuzaki</b><br>watch, listen, and play with the people you miss.</div>
+    <button class="btn btn-primary btn-block settings-close" id="btn-settings-close">Done</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js"></script>
+<script src="peer-manager.js"></script>
+<script src="youtube-sync.js"></script>
+<script src="music-player.js"></script>
+<script src="games.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
