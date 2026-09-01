@@ -8,9 +8,12 @@
 
 // ---------- Utils ----------
 function generateRoomCode(){
-  const bytes = new Uint8Array(12);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+  const ADJ = ['amber','coral','cosmic','velvet','lunar','ember','misty','golden','quiet','wandering','hazy','soft'];
+  const NOUN = ['otter','comet','harbor','ember','willow','falcon','tide','maple','nova','drift','ridge','lark'];
+  const a = ADJ[Math.floor(Math.random()*ADJ.length)];
+  const n = NOUN[Math.floor(Math.random()*NOUN.length)];
+  const num = Math.floor(Math.random()*90+10);
+  return `${a}-${n}-${num}`;
 }
 function nameColor(name){
   let hash=0;
@@ -59,17 +62,17 @@ function getSavedSession(){
   return null;
 }
 
-// ---------- PeerJS plumbing ----------
-function initPeer(customId){
-  peer = customId ? new Peer(customId, {debug:0}) : new Peer({debug:0});
+// ---------- PeerJS plumbing (discovery now via Supabase Realtime presence — see joinRoomPresence) ----------
+function initPeer(){
+  peer = new Peer({debug:0}); // always a random id; roomCode is just the Supabase channel name now
 
   peer.on('open', id=>{
     myId = id;
     participants[myId] = {name: myName};
     saveSession();
+    joinRoomPresence();
     if (window.onPeerReady) window.onPeerReady();
     renderOrbit();
-    if (!isHost) connectToPeer(roomCode);
   });
 
   peer.on('connection', conn=> setupDataConn(conn));
@@ -81,16 +84,52 @@ function initPeer(customId){
 
   peer.on('error', err=>{
     console.error('Peer error:', err);
-    if (err.type === 'peer-unavailable'){
-      showLandingStatus("That room code doesn't seem to be active. Double check it with whoever's hosting.", true);
-    } else if (err.type === 'unavailable-id'){
-      showLandingStatus("That room id was just taken — picking a new one…");
-      // try again with a new random id (or just initPeer() to let Peer pick a random id)
-      setTimeout(()=>initPeer(), 200);
-    } else {
-      showLandingStatus(String(err), true);
-    }
+    if (window.onPeerError) window.onPeerError(String(err.type||err));
   });
+}
+
+// ---------- Room discovery via Supabase Realtime presence ----------
+// Replaces the old "dial the host's PeerJS id" bootstrap. Every client
+// tracks its own {peerId, name} in a channel named after the room code;
+// presence sync/join/leave events are the single source of truth for who's
+// in the room, so the room keeps working even if whoever created it leaves.
+let roomChannel = null;
+function joinRoomPresence(){
+  if (!window.supabaseClient){
+    if (window.onPeerError) window.onPeerError("Can't reach the room service — check your connection and try again.");
+    return;
+  }
+  roomChannel = supabaseClient.channel(`room:${roomCode}`, { config: { presence: { key: myId } } });
+  roomChannel
+    .on('presence', { event:'sync' }, ()=>{
+      // Full snapshot — used once on join to find everyone already here (no "joined" spam)
+      const state = roomChannel.presenceState();
+      Object.values(state).forEach(entries=> entries.forEach(entry=>{
+        if (entry.peerId === myId) return;
+        if (!participants[entry.peerId]) participants[entry.peerId] = { name: entry.name };
+        connectToPeer(entry.peerId);
+      }));
+      renderOrbit();
+    })
+    .on('presence', { event:'join' }, ({ newPresences })=>{
+      newPresences.forEach(p=>{
+        if (p.peerId === myId) return;
+        if (!participants[p.peerId]){ participants[p.peerId] = { name:p.name }; addSystemMessage(`${p.name} joined the room`); }
+        connectToPeer(p.peerId);
+      });
+      renderOrbit();
+    })
+    .on('presence', { event:'leave' }, ({ leftPresences })=>{
+      leftPresences.forEach(p=>{ if (p.peerId !== myId) removePeer(p.peerId); });
+    })
+    .subscribe(async (status)=>{
+      if (status === 'SUBSCRIBED') await roomChannel.track({ peerId: myId, name: myName });
+    });
+}
+function leaveRoomPresence(){
+  if (!roomChannel) return;
+  try{ roomChannel.untrack(); supabaseClient.removeChannel(roomChannel); }catch(e){}
+  roomChannel = null;
 }
 
 function connectToPeer(targetId){
@@ -102,9 +141,8 @@ function connectToPeer(targetId){
 function setupDataConn(conn){
   conn.on('open', ()=>{
     dataConns[conn.peer] = conn;
-    sendData(conn, {type:'hello', name:myName, id:myId, mode: isHost ? currentMode : undefined});
+    sendData(conn, {type:'hello', mode: currentMode});
     if (window.onPeerConnected) window.onPeerConnected(conn.peer);
-    if (isHost) broadcastPeerList();
     maybeCallPeer(conn.peer);
   });
   conn.on('data', data=> handleData(conn.peer, data));
@@ -138,11 +176,6 @@ function maybeCallPeer(peerId){
   setupMediaConn(peer.call(peerId, localStream));
 }
 
-function broadcastPeerList(){
-  const list = Object.entries(participants).map(([id,p])=>({id,name:p.name}));
-  for (const id in dataConns) sendData(dataConns[id], {type:'peerlist', peers:list, mode: currentMode});
-}
-
 function sendData(conn, obj){
   try{ if (conn.open) conn.send(obj); }catch(e){ console.warn(e); }
 }
@@ -160,20 +193,11 @@ function removePeer(peerId){
   renderOrbit();
 }
 
-// ---------- Core handlers: identity, chat, mic ----------
+// ---------- Core handlers: mode sync, rename, chat, mic ----------
+// Roster discovery/join/leave now lives in joinRoomPresence() (Supabase Realtime).
+// 'hello' still travels over the fresh data connection purely to hand the
+// current activity mode to whoever just connected.
 registerHandler('hello', (fromId, data)=>{
-  participants[fromId] = {name:data.name};
-  addSystemMessage(`${data.name} joined the room`);
-  renderOrbit();
-  if (isHost) broadcastPeerList();
-  if (data.mode && window.onRemoteMode) window.onRemoteMode(data.mode);
-});
-registerHandler('peerlist', (fromId, data)=>{
-  data.peers.forEach(p=>{
-    if (p.id!==myId && !participants[p.id]) participants[p.id] = {name:p.name};
-    if (p.id!==myId) connectToPeer(p.id);
-  });
-  renderOrbit();
   if (data.mode && window.onRemoteMode) window.onRemoteMode(data.mode);
 });
 registerHandler('rename', (fromId, data)=>{

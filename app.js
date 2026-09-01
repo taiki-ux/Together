@@ -5,6 +5,17 @@
    isn't specific to one activity lives here.
    ============================================================ */
 
+// ---------- Toast ----------
+function toast(msg){
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.textContent = msg;
+  container.appendChild(el);
+  setTimeout(()=> el.remove(), 3000);
+}
+
 // ---------- Splash: fixed 5s, no skip ----------
 (function(){
   const colors = ['#ff6f91','#ffd166','#5ee6d0','#a78bfa'];
@@ -32,9 +43,13 @@
         myName = saved.name; roomCode = saved.room; isHost = saved.isHost;
         showLandingStatus('Restoring your session…');
         document.getElementById('screen-landing').style.display='flex';
-        initPeer(isHost ? roomCode : undefined);
+        initPeer();
       } else {
         document.getElementById('screen-landing').style.display='flex';
+        // Prefill the join code if this page was opened via an invite link
+        const params = new URLSearchParams(location.search);
+        const invited = params.get('room');
+        if (invited){ roomInput.value = invited; nameInput.focus(); }
       }
     }, 500);
   }, 5000);
@@ -53,8 +68,9 @@ document.getElementById('btn-create').addEventListener('click', ()=>{
   myName = nameInput.value.trim();
   if (!myName){ showLandingStatus('Enter your name first.', true); return; }
   roomCode = generateRoomCode(); isHost = true;
+  setLandingLoading(true);
   showLandingStatus('Opening your room…');
-  initPeer(roomCode);
+  initPeer();
 });
 document.getElementById('btn-join').addEventListener('click', ()=>{
   myName = nameInput.value.trim();
@@ -62,10 +78,15 @@ document.getElementById('btn-join').addEventListener('click', ()=>{
   if (!myName){ showLandingStatus('Enter your name first.', true); return; }
   if (!code){ showLandingStatus("Enter the room code your friend sent you.", true); return; }
   roomCode = code; isHost = false;
+  setLandingLoading(true);
   showLandingStatus('Joining…');
   initPeer();
 });
-window.onPeerError = (msg)=> showLandingStatus(msg, true);
+function setLandingLoading(loading){
+  document.getElementById('btn-create').disabled = loading;
+  document.getElementById('btn-join').disabled = loading;
+}
+window.onPeerError = (msg)=>{ setLandingLoading(false); showLandingStatus(msg, true); };
 
 // ---------- Entry gate (choice-only) ----------
 window.onPeerReady = function(){
@@ -78,17 +99,25 @@ window.onPeerReady = function(){
 };
 document.getElementById('entry-btn-copy').addEventListener('click', copyRoomCode);
 document.getElementById('btn-copy').addEventListener('click', copyRoomCode);
+document.getElementById('entry-btn-invite').addEventListener('click', copyInviteLink);
+document.getElementById('btn-invite').addEventListener('click', copyInviteLink);
 function copyRoomCode(){
   navigator.clipboard.writeText(roomCode).then(()=>{
     ['entry-btn-copy','btn-copy'].forEach(id=>{
       const btn=document.getElementById(id); const old=btn.textContent;
       btn.textContent='✓'; setTimeout(()=>btn.textContent=old,1200);
     });
+    toast('Room code copied');
   });
+}
+function copyInviteLink(){
+  const link = `${location.origin}${location.pathname}?room=${roomCode}`;
+  navigator.clipboard.writeText(link).then(()=> toast('Invite link copied — anyone who opens it can join straight away'));
 }
 function leaveRoom(){
   if (!confirm('Leave the room?')) return;
   clearSession();
+  leaveRoomPresence();
   if (peer) peer.destroy();
   location.reload();
 }
@@ -150,14 +179,14 @@ window.onChannelLoading = (function(prev){
 
 document.getElementById('btn-load-video').addEventListener('click', ()=>{
   const id = extractVideoId(document.getElementById('input-video-url').value);
-  if (!id){ alert("Couldn't find a video in that link — paste a full YouTube URL or an 11-character video ID."); return; }
+  if (!id){ toast("Couldn't find a video in that link — paste a full YouTube URL or ID"); return; }
   YTSync.load('video', id);
 });
 document.getElementById('btn-play-video').addEventListener('click', ()=>YTSync.play('video'));
 document.getElementById('btn-pause-video').addEventListener('click', ()=>YTSync.pause('video'));
 document.getElementById('btn-sync-video').addEventListener('click', ()=>YTSync.syncToMe('video'));
 document.getElementById('btn-seek-video').addEventListener('click', ()=>{
-  if (!YTSync.seek('video', document.getElementById('input-seek-video').value)) alert('Enter a time like 1:23 or a number of seconds.');
+  if (!YTSync.seek('video', document.getElementById('input-seek-video').value)) toast('Enter a time like 1:23 or a number of seconds');
 });
 document.getElementById('input-seek-video').addEventListener('keydown', e=>{ if(e.key==='Enter') document.getElementById('btn-seek-video').click(); });
 document.getElementById('btn-fullscreen').addEventListener('click', async ()=>{
@@ -177,13 +206,13 @@ document.getElementById('btn-fullscreen').addEventListener('click', async ()=>{
 // ---------- Music pane wiring ----------
 document.getElementById('btn-load-music').addEventListener('click', ()=>{
   const res = musicLoadFromInput(document.getElementById('input-music-url').value);
-  if (!res.ok) alert(res.message);
+  if (!res.ok) toast(res.message);
 });
 document.getElementById('btn-play-music').addEventListener('click', ()=>YTSync.play('music'));
 document.getElementById('btn-pause-music').addEventListener('click', ()=>YTSync.pause('music'));
 document.getElementById('btn-sync-music').addEventListener('click', ()=>YTSync.syncToMe('music'));
 document.getElementById('btn-seek-music').addEventListener('click', ()=>{
-  if (!YTSync.seek('music', document.getElementById('input-seek-music').value)) alert('Enter a time like 1:23 or a number of seconds.');
+  if (!YTSync.seek('music', document.getElementById('input-seek-music').value)) toast('Enter a time like 1:23 or a number of seconds');
 });
 document.getElementById('input-seek-music').addEventListener('keydown', e=>{ if(e.key==='Enter') document.getElementById('btn-seek-music').click(); });
 document.getElementById('btn-pick-local').addEventListener('click', ()=> document.getElementById('input-local-file').click());
@@ -238,19 +267,25 @@ const AI_FILLERS = [
   "Ha! Okay okay, carry on 😄",
   "That's the spirit! Someone say the word 'joke' if you want one 👀"
 ];
-function respondAsAI(triggerText){
+async function respondAsAI(triggerText){
+  let reply = null;
+  try{
+    const res = await fetch(AI_FUNCTION_URL, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${SUPABASE_ANON_KEY}`, 'apikey':SUPABASE_ANON_KEY },
+      body: JSON.stringify({ message: triggerText })
+    });
+    if (res.ok){ const json = await res.json(); reply = json.reply; }
+  }catch(e){ /* function not deployed yet, or offline — fall through to scripted reply */ }
+  if (!reply) reply = scriptedAIReply(triggerText);
+  sendChatMessage('🤖 Buddy', reply, true);
+}
+function scriptedAIReply(triggerText){
   const lower = triggerText.toLowerCase();
-  let reply;
-  if (/joke/.test(lower)){
-    reply = AI_JOKES[Math.floor(Math.random()*AI_JOKES.length)];
-  } else if (/movie|watch/.test(lower)){
-    reply = `Tonight's pick: 🎬 "${suggestMovie()}" — trust me on this one.`;
-  } else if (/song|music|track/.test(lower)){
-    reply = `Try this: 🎵 "${suggestSong()}" — put it on and thank me later.`;
-  } else {
-    reply = AI_FILLERS[Math.floor(Math.random()*AI_FILLERS.length)];
-  }
-  setTimeout(()=> sendChatMessage('🤖 Buddy', reply, true), 500 + Math.random()*400);
+  if (/joke/.test(lower)) return AI_JOKES[Math.floor(Math.random()*AI_JOKES.length)];
+  if (/movie|watch/.test(lower)) return `Tonight's pick: 🎬 "${suggestMovie()}" — trust me on this one.`;
+  if (/song|music|track/.test(lower)) return `Try this: 🎵 "${suggestSong()}" — put it on and thank me later.`;
+  return AI_FILLERS[Math.floor(Math.random()*AI_FILLERS.length)];
 }
 window.onChatReceived = function(){ playChime(); };
 function playChime(){
@@ -311,4 +346,56 @@ document.getElementById('select-mic').addEventListener('change', async function(
       if (sender) sender.replaceTrack(newTrack);
     });
   }catch(e){ alert("Couldn't switch microphone."); }
+});
+
+// ---------- Account (Supabase Auth) ----------
+restoreAuthSession().then(refreshAccountPanel);
+window.onAuthChange = refreshAccountPanel;
+function refreshAccountPanel(user){
+  const out = document.getElementById('account-signed-out');
+  const inn = document.getElementById('account-signed-in');
+  if (user){
+    out.style.display='none'; inn.style.display='block';
+    document.getElementById('account-email').textContent = user.email;
+  } else {
+    out.style.display='block'; inn.style.display='none';
+  }
+}
+document.getElementById('btn-signup').addEventListener('click', async ()=>{
+  const email = document.getElementById('input-email').value.trim();
+  const password = document.getElementById('input-password').value;
+  if (!email || !password){ showAccountStatus('Enter an email and password.', true); return; }
+  showAccountStatus('Creating account…');
+  const { error } = await signUpWithEmail(email, password);
+  showAccountStatus(error ? error.message : 'Check your email to confirm, then log in.', !!error);
+});
+document.getElementById('btn-signin').addEventListener('click', async ()=>{
+  const email = document.getElementById('input-email').value.trim();
+  const password = document.getElementById('input-password').value;
+  if (!email || !password){ showAccountStatus('Enter an email and password.', true); return; }
+  showAccountStatus('Logging in…');
+  const { error } = await signInWithEmail(email, password);
+  if (error) showAccountStatus(error.message, true); else toast('Logged in');
+});
+document.getElementById('btn-signout').addEventListener('click', async ()=>{
+  await signOutUser();
+  toast('Logged out');
+});
+function showAccountStatus(msg, isErr){
+  const el = document.getElementById('account-status');
+  el.textContent = msg; el.style.color = isErr ? 'var(--coral)' : 'var(--text-muted)';
+}
+
+// ---------- Save to playlist ----------
+document.getElementById('btn-save-video').addEventListener('click', ()=>{
+  const c = YTChannels.video;
+  if (!c.currentId){ toast('Load a video first'); return; }
+  const title = document.getElementById('input-video-url').value.trim() || c.currentId;
+  saveFavorite('video', title, c.currentId);
+});
+document.getElementById('btn-save-music').addEventListener('click', ()=>{
+  const c = YTChannels.music;
+  if (!c.currentId){ toast('Load a track first'); return; }
+  const title = document.getElementById('input-music-url').value.trim() || c.currentId;
+  saveFavorite('music', title, c.currentId);
 });
