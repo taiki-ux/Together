@@ -59,6 +59,7 @@
         <span>Room</span>
         <span class="code mono" id="entry-room-code">—</span>
         <button class="icon-btn" id="entry-btn-copy" title="Copy room code">⧉</button>
+        <button class="icon-btn" id="entry-btn-invite" title="Copy invite link">🔗</button>
       </div>
       <button class="btn btn-ghost btn-sm" id="entry-btn-leave">Leave</button>
     </div>
@@ -97,6 +98,7 @@
           <span>Room</span>
           <span class="code mono" id="room-code-display">—</span>
           <button class="icon-btn" id="btn-copy" title="Copy room code">⧉</button>
+          <button class="icon-btn" id="btn-invite" title="Copy invite link">🔗</button>
         </div>
         <button class="icon-btn" id="btn-settings" title="Settings">⚙</button>
         <button class="btn btn-ghost btn-sm" id="btn-leave">Leave</button>
@@ -118,6 +120,7 @@
           <div class="load-row">
             <input type="text" id="input-video-url" placeholder="Paste a YouTube URL or video ID…">
             <button class="btn btn-primary" id="btn-load-video">Load</button>
+            <button class="btn btn-ghost" id="btn-save-video" title="Save to your playlist">⭐</button>
           </div>
           <div class="controls-row">
             <button class="btn btn-ghost btn-sm" id="btn-play-video">▶ Play</button>
@@ -148,6 +151,7 @@
           <div class="load-row">
             <input type="text" id="input-music-url" placeholder="Paste a YouTube or Spotify link…">
             <button class="btn btn-violet" id="btn-load-music">Play</button>
+            <button class="btn btn-ghost" id="btn-save-music" title="Save to your playlist">⭐</button>
           </div>
           <div class="controls-row" id="music-sync-controls">
             <button class="btn btn-ghost btn-sm" id="btn-play-music">▶ Play</button>
@@ -175,12 +179,14 @@
         <!-- GAMES -->
         <div class="pane" id="pane-games">
           <div id="games-picker">
-            <div class="game-grid">
-              <div class="game-card" data-game="trivia"><div class="emoji">🧠</div><h3>Trivia Night</h3><p>Answer together, race the clock, climb the scoreboard</p></div>
-              <div class="game-card" data-game="wyr"><div class="emoji">🤔</div><h3>Would You Rather</h3><p>Vote live and see how everyone answered</p></div>
-              <div class="game-card" data-game="ttt"><div class="emoji">❌⭕</div><h3>Tic-Tac-Toe Duel</h3><p>Challenge someone in the room 1-on-1</p></div>
-            </div>
-            <p class="hint" style="margin-top:14px;">This mode is voice-only too — call out your answers instead of typing them!</p>
+            <h3 class="games-heading">Pick a category</h3>
+            <div class="category-grid" id="category-grid"></div>
+          </div>
+
+          <div id="category-detail" style="display:none;">
+            <button class="back-link" id="btn-back-categories">← Categories</button>
+            <h3 class="games-heading" id="category-detail-title"></h3>
+            <div class="game-grid" id="category-game-grid"></div>
           </div>
 
           <div class="game-panel" id="game-trivia" style="display:none;">
@@ -204,6 +210,22 @@
             <div id="ttt-body">
               <p class="hint">Pick someone in the room to challenge.</p>
               <div class="ttt-opponents" id="ttt-opponent-list"></div>
+            </div>
+          </div>
+
+          <div class="game-panel" id="game-tot" style="display:none;">
+            <button class="back-link" data-back-game>← Games</button>
+            <div id="tot-body">
+              <p class="hint">Pick a side and watch how the room votes, live.</p>
+              <button class="btn btn-violet" id="btn-tot-start">Start</button>
+            </div>
+          </div>
+
+          <div class="game-panel" id="game-woa" style="display:none;">
+            <button class="back-link" data-back-game>← Games</button>
+            <div id="woa-body">
+              <p class="hint">Everyone answers the prompt on purpose wrong — funniest answer wins the room's laugh.</p>
+              <button class="btn btn-primary" id="btn-woa-start">Start round</button>
             </div>
           </div>
         </div>
@@ -243,7 +265,24 @@
     <div class="field" style="margin:6px 0 14px;"><input type="text" id="input-rename" maxlength="20"></div>
     <button class="btn btn-ghost btn-block btn-sm" id="btn-rename-save" style="margin-bottom:6px;">Save name</button>
 
-    <div class="settings-row"><div><div class="lbl">Microphone</div><div class="desc">Choose which mic to use for voice</div></div></div>
+    <div class="settings-row"><div><div class="lbl">Account</div><div class="desc">Sign in to save favorites across sessions</div></div></div>
+    <div id="account-signed-out">
+      <div class="field" style="margin:6px 0 8px;"><input type="text" id="input-email" placeholder="Email"></div>
+      <div class="field" style="margin:0 0 10px;"><input type="password" id="input-password" placeholder="Password"></div>
+      <div style="display:flex; gap:8px; margin-bottom:6px;">
+        <button class="btn btn-secondary btn-sm" style="flex:1;" id="btn-signin">Log in</button>
+        <button class="btn btn-ghost btn-sm" style="flex:1;" id="btn-signup">Sign up</button>
+      </div>
+      <p class="hint" id="account-status" style="min-height:16px;"></p>
+    </div>
+    <div id="account-signed-in" style="display:none;">
+      <p class="hint" style="margin-bottom:8px;">Signed in as <b id="account-email"></b></p>
+      <button class="btn btn-ghost btn-block btn-sm" id="btn-signout">Log out</button>
+    </div>
+
+    <div class="settings-row" style="margin-top:6px;">
+      <div><div class="lbl">Microphone</div><div class="desc">Choose which mic to use for voice</div></div>
+    </div>
     <select id="select-mic" style="margin:6px 0 4px;"></select>
 
     <div class="settings-row">
@@ -256,7 +295,7 @@
     </div>
 
     <div class="settings-roadmap">
-      🚧 Coming later: playlists, saved rooms, Spotify sign-in, and accounts (sign up / log in). The @ai buddy is currently a scripted joke &amp; recommendation bot — a real connected AI needs a backend to hold an API key safely, which lands alongside accounts.
+      ✅ Accounts, playlists, and the AI buddy now run on Supabase (once you've run the one-time setup — see supabase/README.md). 🚧 Spotify still needs a Premium account to test real playback, so it's not wired to actually play yet.
     </div>
 
     <div class="settings-about"><b>Together</b> — made by <b>Taiki Ryuzaki</b><br>watch, listen, and play with the people you miss.</div>
@@ -264,10 +303,16 @@
   </div>
 </div>
 
+<div id="toast-container"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js"></script>
+<script src="config.js"></script>
+<script src="supabase-client.js"></script>
 <script src="peer-manager.js"></script>
 <script src="youtube-sync.js"></script>
 <script src="music-player.js"></script>
+<script src="playlists.js"></script>
 <script src="games.js"></script>
 <script src="app.js"></script>
 </body>
