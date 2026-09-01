@@ -295,7 +295,7 @@
     </div>
 
     <div class="settings-roadmap">
-      ✅ Accounts, playlists, and the AI buddy now run on Supabase (once you've run the one-time setup — see supabase/README.md). 🚧 Spotify still needs a Premium account to test real playback, so it's not wired to actually play yet.
+      ✅ Accounts, playlists, and the AI buddy now run on Supabase (once you've run the one-time setup — see supabase/README.md). 🚧 Spotify still needs a Premium account to test real playback sync.
     </div>
 
     <div class="settings-about"><b>Together</b> — made by <b>Taiki Ryuzaki</b><br>watch, listen, and play with the people you miss.</div>
@@ -305,15 +305,22 @@
 
 <div id="toast-container"></div>
 
+<!-- External libraries (no dependencies) -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js"></script>
+
+<!-- Config & init (must load first, before anything else) -->
 <script src="config.js"></script>
 <script src="supabase-client.js"></script>
+
+<!-- Feature modules (depends on config) -->
 <script src="peer-manager.js"></script>
 <script src="youtube-sync.js"></script>
 <script src="music-player.js"></script>
 <script src="playlists.js"></script>
 <script src="games.js"></script>
+
+<!-- Main app (depends on all modules above) -->
 <script src="app.js"></script>
 </body>
 </html>
