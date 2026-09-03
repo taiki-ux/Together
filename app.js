@@ -366,6 +366,7 @@ function playChime(){
 
 document.getElementById('btn-settings').addEventListener('click', ()=>{
   document.getElementById('settings-overlay').style.display='flex';
+  document.getElementById('settings-account-desc').textContent = `${myProfile.first_name} ${myProfile.last_name} · @${myProfile.username}`;
   populateMicSelect();
 });
 document.getElementById('btn-settings-close').addEventListener('click', ()=>{ document.getElementById('settings-overlay').style.display='none'; });
@@ -416,14 +417,14 @@ document.getElementById('select-mic').addEventListener('change', async function(
 });
 
 // ---------- Account (Supabase Auth) ----------
-window.onAuthChange = function(user) {
-  refreshAccountPanel(user);
-  if (user && document.getElementById('screen-auth').style.display === 'flex') {
-    enterAppAsUser();
-  }
+document.getElementById('btn-settings-logout').addEventListener('click', async ()=>{
+  await signOutUser();
+  location.reload();
+});
+window.onAuthChange = function(user){
+  if (!user && document.getElementById('screen-room').style.display !== 'none') location.reload();
 };
 
-restoreAuthSession().then(refreshAccountPanel);
 function refreshAccountPanel(user){
   const out = document.getElementById('account-signed-out');
   const inn = document.getElementById('account-signed-in');
