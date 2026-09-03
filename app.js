@@ -16,6 +16,18 @@ function toast(msg){
   setTimeout(()=> el.remove(), 3000);
 }
 
+function toastSuccess(msg) {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+  const el = document.createElement('div');
+  el.className = 'toast toast-success';
+  el.textContent = msg;
+  el.style.color = '#2ecc71';
+  el.style.fontWeight = 'bold';
+  container.appendChild(el);
+  setTimeout(()=> el.remove(), 3000);
+}
+
 // ---------- Splash: fixed 5s, no skip ----------
 (function(){
   const colors = ['#ff6f91','#ffd166','#5ee6d0','#a78bfa'];
@@ -56,14 +68,23 @@ function showAuthScreen() {
 
 // ---------- Post-login entry point ---------- 
 function enterAppAsUser(){
-  myName = myProfile.username;
+  // Guard: ensure myProfile exists before accessing
+  if (!myProfile) {
+    console.error('myProfile is null, cannot enter app');
+    showAuthScreen();
+    return;
+  }
+  
+  myName = myProfile.username || 'User';
   document.getElementById('screen-auth').style.display='none';
   document.getElementById('screen-landing').style.display='flex';
   document.getElementById('screen-room').style.display='none';
+  
   const welcomeEl = document.getElementById('landing-welcome');
   if (welcomeEl) {
     welcomeEl.textContent = `Hey ${myProfile.first_name} — sync a video, put on music, or play a game.`;
   }
+  
   const saved = getSavedSession();
   if (saved){
     roomCode = saved.room; isHost = saved.isHost;
@@ -118,7 +139,6 @@ document.getElementById('btn-copy').addEventListener('click', copyRoomCode);
 document.getElementById('entry-btn-invite').addEventListener('click', copyInviteLink);
 document.getElementById('btn-invite').addEventListener('click', copyInviteLink);
 
-// Track button state to prevent rapid-click race conditions
 const buttonStates = {};
 
 function copyRoomCode(){
@@ -162,7 +182,6 @@ document.getElementById('btn-leave').addEventListener('click', leaveRoom);
 
 document.querySelectorAll('.hub-card').forEach(c=> c.addEventListener('click', ()=> enterActivity(c.dataset.mode, true)));
 
-// ---------- Mode switching ----------
 let isEnteringActivity = false;
 
 function enterActivity(mode, broadcastIt){
@@ -179,8 +198,6 @@ function enterActivity(mode, broadcastIt){
 
 function setMode(mode, broadcastIt){
   currentMode = mode;
-  // if we're still on the entry gate and a peer told us to jump straight into
-  // an activity (mid-session join), reveal the shell too
   const shell = document.getElementById('activity-shell');
   if (shell && shell.style.display !== 'flex' && !isEnteringActivity) {
     enterActivity(mode, false);
@@ -190,7 +207,6 @@ function setMode(mode, broadcastIt){
   document.getElementById('pane-'+mode).classList.add('active');
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active', b.dataset.mode===mode));
 
-  // Chat is only surfaced in Music mode — Video and Games stay voice-only
   const chatToggleWrap = document.getElementById('chat-toggle-wrap');
   const chatCol = document.getElementById('chat-col');
   if (mode === 'music'){
@@ -205,7 +221,6 @@ function setMode(mode, broadcastIt){
 window.onRemoteMode = (mode)=> setMode(mode, false);
 document.querySelectorAll('.nav-btn').forEach(b=> b.addEventListener('click', ()=>setMode(b.dataset.mode, true)));
 
-// ---------- Chat drawer (music mode only) ----------
 function setChatToggleLabel(open){
   const btn = document.getElementById('btn-chat-toggle');
   if (btn) btn.textContent = open ? '✕ Close chat' : '💬 Open chat';
@@ -217,7 +232,6 @@ document.getElementById('btn-chat-toggle').addEventListener('click', ()=>{
   setChatToggleLabel(open);
 });
 
-// ---------- Video pane wiring ----------
 window.onChannelLoading = (function(prev){
   return function(ch, videoId){
     if (prev) prev(ch, videoId);
@@ -251,7 +265,6 @@ document.getElementById('btn-fullscreen').addEventListener('click', async ()=>{
   }
 });
 
-// ---------- Music pane wiring ----------
 document.getElementById('btn-load-music').addEventListener('click', ()=>{
   const res = musicLoadFromInput(document.getElementById('input-music-url').value);
   if (!res.ok) toast(res.message);
@@ -268,7 +281,6 @@ document.getElementById('input-local-file').addEventListener('change', function(
   if (this.files && this.files[0]) musicPlayLocalFile(this.files[0]);
 });
 
-// ---------- Mic ----------
 document.getElementById('btn-mic').addEventListener('click', async ()=>{
   const btn = document.getElementById('btn-mic');
   if (!micOn){
@@ -277,7 +289,6 @@ document.getElementById('btn-mic').addEventListener('click', async ()=>{
       localStream.getAudioTracks().forEach(t=>t.enabled=true);
       micOn = true;
       btn.textContent = '🔇 Leave voice'; btn.classList.remove('btn-secondary'); btn.classList.add('btn-ghost');
-      // Snapshot peer IDs to avoid iterator invalidation issues
       const peerIds = Object.keys(dataConns);
       for (const id of peerIds) maybeCallPeer(id);
       broadcast({type:'mic', muted:false});
@@ -290,7 +301,6 @@ document.getElementById('btn-mic').addEventListener('click', async ()=>{
   }
 });
 
-// ---------- Chat send + @ai companion ----------
 document.getElementById('btn-send').addEventListener('click', sendChatFromInput);
 document.getElementById('input-chat').addEventListener('keydown', e=>{ if(e.key==='Enter') sendChatFromInput(); });
 function sendChatFromInput(){
@@ -298,7 +308,6 @@ function sendChatFromInput(){
   const text = input.value.trim(); if (!text) return;
   sendChatMessage(myName, text, false);
   input.value = '';
-  // Match @ai as a word boundary, not as substring
   if (/(?:^|\s)@ai(?:\s|$)/i.test(text)) respondAsAI(text);
 }
 
@@ -355,7 +364,6 @@ function playChime(){
   }catch(e){}
 }
 
-// ---------- Settings ----------
 document.getElementById('btn-settings').addEventListener('click', ()=>{
   document.getElementById('settings-overlay').style.display='flex';
   populateMicSelect();
@@ -380,7 +388,6 @@ async function populateMicSelect(){
     const sel = document.getElementById('select-mic');
     const devices = await navigator.mediaDevices.enumerateDevices();
     const mics = devices.filter(d=>d.kind==='audioinput');
-    // Use safe DOM API instead of innerHTML
     sel.innerHTML = '';
     mics.forEach((d, i) => {
       const option = document.createElement('option');
@@ -409,10 +416,8 @@ document.getElementById('select-mic').addEventListener('change', async function(
 });
 
 // ---------- Account (Supabase Auth) ----------
-// Refresh auth panel when auth changes
 window.onAuthChange = function(user) {
   refreshAccountPanel(user);
-  // If user just logged in and we're on auth screen, transition to landing
   if (user && document.getElementById('screen-auth').style.display === 'flex') {
     enterAppAsUser();
   }
@@ -430,8 +435,9 @@ function refreshAccountPanel(user){
   }
 }
 
-// Auth screen signup
-document.getElementById('btn-signup').addEventListener('click', async ()=>{
+// Auth screen - Sign up with full profile
+document.getElementById('btn-signup').addEventListener('click', async function(e){
+  e.preventDefault();
   const email = document.getElementById('signup-email').value.trim();
   const password = document.getElementById('signup-password').value;
   const firstName = document.getElementById('signup-first').value.trim();
@@ -448,27 +454,34 @@ document.getElementById('btn-signup').addEventListener('click', async ()=>{
   if (error) {
     showAuthStatus(error.message || 'Sign-up failed', true);
   } else {
-    showAuthStatus('Account created! Welcome to Together.', false);
-    // The auth state change listener will trigger enterAppAsUser
+    showAuthStatus('✓ Registration successful! Welcome to Together!', false);
+    setTimeout(() => {
+      document.getElementById('signup-first').value = '';
+      document.getElementById('signup-last').value = '';
+      document.getElementById('signup-username').value = '';
+      document.getElementById('signup-email').value = '';
+      document.getElementById('signup-password').value = '';
+    }, 1500);
   }
 });
 
-// Auth screen login
-document.getElementById('btn-login').addEventListener('click', async ()=>{
+// Auth screen - Log in
+document.getElementById('btn-login').addEventListener('click', async function(e){
+  e.preventDefault();
   const email = document.getElementById('login-email').value.trim();
   const password = document.getElementById('login-password').value;
   if (!email || !password){ showAuthStatus('Enter an email and password.', true); return; }
   showAuthStatus('Logging in…');
   const { error } = await signInWithEmail(email, password);
   if (error) showAuthStatus(error.message, true); 
-  // else the listener will trigger enterAppAsUser
 });
 
 function showAuthStatus(msg, isErr){
   const el = document.getElementById('auth-status');
   if (el) {
     el.textContent = msg; 
-    el.style.color = isErr ? 'var(--coral)' : 'var(--text-muted)';
+    el.style.color = isErr ? 'var(--coral)' : '#2ecc71';
+    el.style.fontWeight = isErr ? 'normal' : 'bold';
   }
 }
 
@@ -484,17 +497,8 @@ document.querySelectorAll('.auth-tab').forEach(btn => {
   });
 });
 
-// Settings panel signup/login (different from auth screen)
-document.getElementById('btn-signup').addEventListener('click', async function(e){
-  const email = document.getElementById('input-email').value.trim();
-  const password = document.getElementById('input-password').value;
-  if (!email || !password){ showAccountStatus('Enter an email and password.', true); return; }
-  showAccountStatus('Creating account…');
-  const { error } = await signUpWithEmail(email, password);
-  showAccountStatus(error ? error.message : 'Check your email to confirm, then log in.', !!error);
-});
-
-document.getElementById('btn-signin').addEventListener('click', async ()=>{
+// Settings panel signin/signup (different from auth screen)
+document.getElementById('btn-signin').addEventListener('click', async function(e){
   const email = document.getElementById('input-email').value.trim();
   const password = document.getElementById('input-password').value;
   if (!email || !password){ showAccountStatus('Enter an email and password.', true); return; }
