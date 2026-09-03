@@ -7,6 +7,7 @@
    - Add try/catch and consistent logging for network calls
    - Ensure local state (currentUser / myProfile) is updated where appropriate
    - Keep window.supabaseClient for backward compatibility (used by peer-manager.js)
+   - Add profile creation retry for signup flows
    ============================================================ */
 
 let supabaseClient = null;
@@ -36,6 +37,7 @@ try {
       // don't await inside the handler (listener is sync); kick off profile load
       loadMyProfile().catch((err) => console.error('Failed to load profile after auth change:', err));
     }
+    if (typeof window.onAuthChange === 'function') window.onAuthChange(currentUser);
   });
 } catch (e) {
   console.error('Supabase failed to initialize:', e);
@@ -58,7 +60,7 @@ async function restoreAuthSession() {
   }
 }
 
-async function loadMyProfile() {
+async function loadMyProfile(retries = 3) {
   if (!currentUser) { myProfile = null; return null; }
   if (!supabaseClient) { myProfile = null; return null; }
   try {
@@ -69,7 +71,13 @@ async function loadMyProfile() {
       .single();
 
     if (error) {
-      // When using .single(), a 406 or 404 may indicate not found
+      // 406 may indicate profile not yet created (for new signups)
+      // Retry a few times with a short delay to allow the trigger to complete
+      if (error.code === 'PGRST116' && retries > 0) {
+        console.warn(`Profile not found yet, retrying (${retries} left)...`);
+        await new Promise(resolve => setTimeout(resolve, 500));
+        return loadMyProfile(retries - 1);
+      }
       console.error('Failed to load profile:', error);
       myProfile = null;
       return null;
@@ -157,6 +165,29 @@ async function signUpWithProfile({ firstName, lastName, username, email, passwor
   }
 }
 
+// For the auth screen signup (simpler form without profile data yet)
+async function signUpWithEmail(email, password) {
+  if (!supabaseClient) return { error: { message: "Account service isn't available right now." } };
+  try {
+    // Just sign up; the trigger will create a basic profile
+    const result = await supabaseClient.auth.signUp({
+      email,
+      password,
+      options: { data: { username: 'user_' + Math.random().toString(36).slice(2, 8) } }
+    });
+
+    if (result?.data?.session) {
+      currentUser = result.data.session.user;
+      await loadMyProfile().catch(err => console.error('Failed to load profile after signUp:', err));
+    }
+
+    return result;
+  } catch (err) {
+    console.error('Unexpected signUp error:', err);
+    return { error: err };
+  }
+}
+
 async function signInWithEmail(email, password) {
   if (!supabaseClient) return { error: { message: "Account service isn't available right now." } };
   try {
@@ -203,5 +234,6 @@ window.restoreAuthSession = restoreAuthSession;
 window.loadMyProfile = loadMyProfile;
 window.isUsernameTaken = isUsernameTaken;
 window.signUpWithProfile = signUpWithProfile;
+window.signUpWithEmail = signUpWithEmail;
 window.signInWithEmail = signInWithEmail;
 window.signOutUser = signOutUser;
