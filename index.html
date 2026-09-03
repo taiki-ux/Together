@@ -22,16 +22,49 @@
 </div>
 
 <!-- ================= LANDING ================= -->
-<div id="screen-landing">
+<!-- ================= AUTH (sign up / log in) ================= -->
+  <div id="screen-auth" style="display:none; min-height:100vh; align-items:center; justify-content:center; padding:24px;">
+    <div class="landing-card">
+      <div class="eyebrow">watch · listen · play</div>
+      <h1>Together</h1>
+      <p class="sub">Create an account or log in to get started.</p>
+      
+      <div class="auth-tabs">
+        <button class="auth-tab active" data-tab="login">Log in</button>
+        <button class="auth-tab" data-tab="signup">Sign up</button>
+    </div>
+    
+      <div id="auth-login">
+        <div class="field"><label>Email</label><input type="text" id="login-email" placeholder="you@example.com"></div>
+        <div class="field"><label>Password</label><input type="password" id="login-password" placeholder="Your password"></div>
+        <button class="btn btn-primary btn-block" id="btn-login">Log in</button>
+      </div>
+      
+      <div id="auth-signup" style="display:none;">
+        <div class="split" style="margin-top:0;">
+          <div class="field"><label>First name</label><input type="text" id="signup-first"></div>
+          <div class="field"><label>Last name</label><input type="text" id="signup-last"></div>
+        </div>
+      <div class="field">
+          <label>Nickname</label>
+          <input type="text" id="signup-username" placeholder="Shown in chat & the room" maxlength="20">
+          <p class="hint" id="username-status" style="margin-top:4px;">This is your display name everywhere in the app — like a username, and it must be unique.</p>
+        </div>
+        <div class="field"><label>Email</label><input type="text" id="signup-email" placeholder="you@example.com"></div>
+        <div class="field"><label>Password</label><input type="password" id="signup-password" placeholder="At least 6 characters"></div>
+        <button class="btn btn-primary btn-block" id="btn-signup">Create account</button>
+      </div>
+      
+      <div id="auth-status" style="margin-top:16px; font-size:13px; color:var(--text-muted); min-height:18px;"></div>
+    </div>
+  </div>
+  
+  <div id="screen-landing">
   <div class="landing-card">
+    <button class="btn btn-ghost btn-sm btn-block" id="btn-landing-logout" style="margin-top:14px;">Log out</button>
     <div class="eyebrow">watch · listen · play</div>
     <h1>Together</h1>
     <p class="sub">Sync a video, put on music, or play a game — with whoever's far away tonight.</p>
-
-    <div class="field">
-      <label>Your name</label>
-      <input type="text" id="input-name" placeholder="e.g. Ryu" maxlength="20">
-    </div>
 
     <div class="split">
       <div class="option-box">
