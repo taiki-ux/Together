@@ -24,7 +24,7 @@ function initials(name){ return (name||'?').trim().split(/\s+/).map(w=>w[0]).sli
 function escapeHtml(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
 
 // ---------- Shared room state ----------
-let peer=null, myId=null, myName='', roomCode='', isHost=false;
+let peer=null, myId=null, myName='', roomCode='', isHost=false, requireApproval=false;
 const dataConns = {};
 const mediaConns = {};
 const audioEls = {};
@@ -64,29 +64,74 @@ function getSavedSession(){
 
 // ---------- PeerJS plumbing (discovery now via Supabase Realtime presence — see joinRoomPresence) ----------
 function initPeer(){
-  peer = new Peer({debug:0}); // always a random id; roomCode is just the Supabase channel name now
-
-  peer.on('open', id=>{
-    myId = id;
-    participants[myId] = {name: myName};
-    saveSession();
-    joinRoomPresence();
-    if (window.onPeerReady) window.onPeerReady();
-    renderOrbit();
-  });
-
-  peer.on('connection', conn=> setupDataConn(conn));
-
-  peer.on('call', call=>{
-    call.answer(localStream || undefined);
-    setupMediaConn(call);
-  });
-
-  peer.on('error', err=>{
-    console.error('Peer error:', err);
-    if (window.onPeerError) window.onPeerError(String(err.type||err));
-  });
+   peer = new Peer({debug:0}); // always a random id; roomCode is just the Supabase channel name now
+   
+   peer.on('open', id=>{
+      myId = id;
+      participants[myId] = {name: myName};
+      saveSession();
+      if (requireApproval){
+         beginKnock();
+      } else {
+         joinRoomPresence();
+         if (window.onPeerReady) window.onPeerReady();
+         renderOrbit();
+      }
+   });
+   peer.on('connection', conn=> setupDataConn(conn));
+   peer.on('call', call=>{
+      call.answer(localStream || undefined);
+      setupMediaConn(call);
+   });
+   peer.on('error', err=>{
+      console.error('Peer error:', err);
+      if (window.onPeerError)
+         window.onPeerError(String(err.type||err));
+   });
+}  // ---------- Knock-to-enter (typed-code joins only) ----------
+// A knocker subscribes to the room's channel WITHOUT tracking presence (so 
+// they aren't "in" the room yet), broadcasts a request, and waits for any
+// current member to accept or deny. Approval upgrades them to a full,
+// presence-tracked member via the normal joinRoomPresence() path.
+function beginKnock(){
+   if (window.onKnockWaiting) window.onKnockWaiting();
+   roomChannel = supabaseClient.channel(`room:${roomCode}`);
+   roomChannel
+      .on('broadcast', { event:'knock-response' }, ({ payload })=>{
+         if (payload.peerId !== myId) return;
+         if (payload.approved){
+            try{ supabaseClient.removeChannel(roomChannel); }catch(e){}
+            roomChannel = null;
+            requireApproval = false;
+            joinRoomPresence();
+            if (window.onPeerReady) window.onPeerReady();
+            renderOrbit();
+         } else {
+            try{ supabaseClient.removeChannel(roomChannel); }catch(e){}
+            roomChannel = null;
+            if (window.onKnockDenied) window.onKnockDenied();
+         }
+      })
+      .subscribe((status)=>{
+         if (status === 'SUBSCRIBED'){
+            roomChannel.send({ type:'broadcast', event:'knock', payload:{ peerId:myId, name:myName
+                                 }
+                             });
+            setTimeout(()=>{
+               if (roomChannel){
+                  try{ supabaseClient.removeChannel(roomChannel); }catch(e){}
+                  roomChannel = null;
+                  if (window.onKnockTimeout) window.onKnockTimeout();
+               }
+            }, 30000);
+         }
+      });
 }
+function respondToKnock(peerId, approved){
+   if (!roomChannel) return;
+   roomChannel.send({ type:'broadcast', event:'knock-response', payload:{ peerId, approved }
+                    });
+} 
 
 // ---------- Room discovery via Supabase Realtime presence ----------
 // Replaces the old "dial the host's PeerJS id" bootstrap. Every client
@@ -120,8 +165,12 @@ function joinRoomPresence(){
       renderOrbit();
     })
     .on('presence', { event:'leave' }, ({ leftPresences })=>{
-      leftPresences.forEach(p=>{ if (p.peerId !== myId) removePeer(p.peerId); });
+         leftPresences.forEach(p=>{ if (p.peerId !== myId) removePeer(p.peerId); });
     })
+    .on('broadcast', { event:'knock' }, ({ payload })=>{
+      if (window.onKnockReceived) window.onKnockReceived(payload);
+    })
+    .subscribe(async (status)=>{
     .subscribe(async (status)=>{
       if (status === 'SUBSCRIBED') await roomChannel.track({ peerId: myId, name: myName });
     });
