@@ -32,39 +32,38 @@ function toast(msg){
     p.style.animationDelay = (Math.random()*4)+'s';
     splash.appendChild(p);
   }
-setTimeout(async ()=>{
-   splash.style.transition = 'opacity .5s ease';
-   splash.style.opacity = '0';
-   setTimeout(async ()=>{
+  setTimeout(async ()=>{
+    splash.style.transition = 'opacity .5s ease';
+    splash.style.opacity = '0';
+    setTimeout(async ()=>{
       splash.style.display='none';
       const user = await restoreAuthSession();
       if (user && myProfile){
-         enterAppAsUser();
+        enterAppAsUser();
       } else {
-         document.getElementById('screen-auth').style.display='flex';
+        document.getElementById('screen-auth').style.display='flex';
       }
-   }, 500);
-}, 5000);
-})();  
+    }, 500);
+  }, 5000);
+})();
 
 // ---------- Post-login entry point ---------- 
 function enterAppAsUser(){
-   myName = myProfile.username;
-   document.getElementById('screen-auth').style.display='none';
-   document.getElementById('screen-landing').style.display='flex';
-   document.getElementById('landing-welcome').textContent = `Hey ${myProfile.first_name} — sync a video, put on music, or play a game.`;
-   const saved = getSavedSession();
-   if (saved){
-      roomCode = saved.room; isHost = saved.isHost;
-      showLandingStatus('Restoring your session…');
-      initPeer();
-      return;
-   }
-   const params = new URLSearchParams(location.search);
-   const invited = params.get('room');
-   if (invited) roomInput.value = invited;
+  myName = myProfile.username;
+  document.getElementById('screen-auth').style.display='none';
+  document.getElementById('screen-landing').style.display='flex';
+  document.getElementById('landing-welcome').textContent = `Hey ${myProfile.first_name} — sync a video, put on music, or play a game.`;
+  const saved = getSavedSession();
+  if (saved){
+    roomCode = saved.room; isHost = saved.isHost;
+    showLandingStatus('Restoring your session…');
+    initPeer();
+    return;
+  }
+  const params = new URLSearchParams(location.search);
+  const invited = params.get('room');
+  if (invited) roomInput.value = invited;
 }
-})();
 
 // ---------- Global toggles used by other modules ----------
 window.autoSyncOn = true;
@@ -107,19 +106,39 @@ document.getElementById('entry-btn-copy').addEventListener('click', copyRoomCode
 document.getElementById('btn-copy').addEventListener('click', copyRoomCode);
 document.getElementById('entry-btn-invite').addEventListener('click', copyInviteLink);
 document.getElementById('btn-invite').addEventListener('click', copyInviteLink);
+
+// Track button state to prevent rapid-click race conditions
+const buttonStates = {};
+
 function copyRoomCode(){
+  if (buttonStates['copy-in-progress']) return;
+  buttonStates['copy-in-progress'] = true;
+  
   navigator.clipboard.writeText(roomCode).then(()=>{
     ['entry-btn-copy','btn-copy'].forEach(id=>{
-      const btn=document.getElementById(id); const old=btn.textContent;
-      btn.textContent='✓'; setTimeout(()=>btn.textContent=old,1200);
+      const btn=document.getElementById(id);
+      if (!btn) return;
+      const old=btn.textContent;
+      btn.textContent='✓';
+      const timeout = setTimeout(()=>{
+        btn.textContent=old;
+        if (id === 'btn-copy') buttonStates['copy-in-progress'] = false;
+      }, 1200);
     });
     toast('Room code copied');
+  }).catch(err => {
+    console.error('Failed to copy room code:', err);
+    buttonStates['copy-in-progress'] = false;
   });
 }
+
 function copyInviteLink(){
   const link = `${location.origin}${location.pathname}?room=${roomCode}`;
-  navigator.clipboard.writeText(link).then(()=> toast('Invite link copied — anyone who opens it can join straight away'));
+  navigator.clipboard.writeText(link).then(()=> toast('Invite link copied — anyone who opens it can join straight away')).catch(err => {
+    console.error('Failed to copy invite link:', err);
+  });
 }
+
 function leaveRoom(){
   if (!confirm('Leave the room?')) return;
   clearSession();
@@ -133,17 +152,29 @@ document.getElementById('btn-leave').addEventListener('click', leaveRoom);
 document.querySelectorAll('.hub-card').forEach(c=> c.addEventListener('click', ()=> enterActivity(c.dataset.mode, true)));
 
 // ---------- Mode switching ----------
+let isEnteringActivity = false;
+
 function enterActivity(mode, broadcastIt){
+  if (isEnteringActivity) return;
+  isEnteringActivity = true;
+  
   document.getElementById('entry-hub').style.display='none';
   document.getElementById('activity-shell').style.display='flex';
   document.getElementById('room-code-display').textContent = roomCode;
   setMode(mode, broadcastIt);
+  
+  isEnteringActivity = false;
 }
+
 function setMode(mode, broadcastIt){
   currentMode = mode;
   // if we're still on the entry gate and a peer told us to jump straight into
   // an activity (mid-session join), reveal the shell too
-  if (document.getElementById('activity-shell').style.display !== 'flex') enterActivity(mode, false);
+  const shell = document.getElementById('activity-shell');
+  if (shell && shell.style.display !== 'flex' && !isEnteringActivity) {
+    enterActivity(mode, false);
+    return;
+  }
   document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
   document.getElementById('pane-'+mode).classList.add('active');
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active', b.dataset.mode===mode));
@@ -235,7 +266,9 @@ document.getElementById('btn-mic').addEventListener('click', async ()=>{
       localStream.getAudioTracks().forEach(t=>t.enabled=true);
       micOn = true;
       btn.textContent = '🔇 Leave voice'; btn.classList.remove('btn-secondary'); btn.classList.add('btn-ghost');
-      for (const id in dataConns) maybeCallPeer(id);
+      // Snapshot peer IDs to avoid iterator invalidation issues
+      const peerIds = Object.keys(dataConns);
+      for (const id of peerIds) maybeCallPeer(id);
       broadcast({type:'mic', muted:false});
     }catch(e){ alert("Couldn't access your microphone. Check your browser's permission settings."); }
   } else {
@@ -254,7 +287,8 @@ function sendChatFromInput(){
   const text = input.value.trim(); if (!text) return;
   sendChatMessage(myName, text, false);
   input.value = '';
-  if (/@ai\b/i.test(text)) respondAsAI(text);
+  // Match @ai as a word boundary, not as substring
+  if (/(?:^|\s)@ai(?:\s|$)/i.test(text)) respondAsAI(text);
 }
 
 const AI_JOKES = [
@@ -282,7 +316,9 @@ async function respondAsAI(triggerText){
       body: JSON.stringify({ message: triggerText })
     });
     if (res.ok){ const json = await res.json(); reply = json.reply; }
-  }catch(e){ /* function not deployed yet, or offline — fall through to scripted reply */ }
+  }catch(e){ 
+    console.warn('AI function call failed:', e);
+  }
   if (!reply) reply = scriptedAIReply(triggerText);
   sendChatMessage('🤖 Buddy', reply, true);
 }
@@ -333,8 +369,15 @@ async function populateMicSelect(){
     const sel = document.getElementById('select-mic');
     const devices = await navigator.mediaDevices.enumerateDevices();
     const mics = devices.filter(d=>d.kind==='audioinput');
-    sel.innerHTML = mics.map((d,i)=>`<option value="${d.deviceId}">${d.label||('Microphone '+(i+1))}</option>`).join('');
-  }catch(e){}
+    // Use safe DOM API instead of innerHTML
+    sel.innerHTML = '';
+    mics.forEach((d, i) => {
+      const option = document.createElement('option');
+      option.value = d.deviceId;
+      option.textContent = d.label || ('Microphone ' + (i + 1));
+      sel.appendChild(option);
+    });
+  }catch(e){ console.error('Failed to populate microphone list:', e); }
 }
 document.getElementById('select-mic').addEventListener('change', async function(){
   const deviceId = this.value; if (!deviceId) return;
@@ -351,7 +394,7 @@ document.getElementById('select-mic').addEventListener('change', async function(
       const sender = pc.getSenders().find(s=>s.track && s.track.kind==='audio');
       if (sender) sender.replaceTrack(newTrack);
     });
-  }catch(e){ alert("Couldn't switch microphone."); }
+  }catch(e){ alert("Couldn't switch microphone."); console.error('Microphone switch error:', e); }
 });
 
 // ---------- Account (Supabase Auth) ----------
