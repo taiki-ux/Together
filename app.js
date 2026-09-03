@@ -32,27 +32,38 @@ function toast(msg){
     p.style.animationDelay = (Math.random()*4)+'s';
     splash.appendChild(p);
   }
-  setTimeout(()=>{
-    splash.style.transition = 'opacity .5s ease';
-    splash.style.opacity = '0';
-    setTimeout(()=>{
+setTimeout(async ()=>{
+   splash.style.transition = 'opacity .5s ease';
+   splash.style.opacity = '0';
+   setTimeout(async ()=>{
       splash.style.display='none';
-      // Resume a saved session, or drop into the landing form
-      const saved = getSavedSession();
-      if (saved){
-        myName = saved.name; roomCode = saved.room; isHost = saved.isHost;
-        showLandingStatus('Restoring your session…');
-        document.getElementById('screen-landing').style.display='flex';
-        initPeer();
+      const user = await restoreAuthSession();
+      if (user && myProfile){
+         enterAppAsUser();
       } else {
-        document.getElementById('screen-landing').style.display='flex';
-        // Prefill the join code if this page was opened via an invite link
-        const params = new URLSearchParams(location.search);
-        const invited = params.get('room');
-        if (invited){ roomInput.value = invited; nameInput.focus(); }
+         document.getElementById('screen-auth').style.display='flex';
       }
-    }, 500);
-  }, 5000);
+   }, 500);
+}, 5000);
+})();  
+
+// ---------- Post-login entry point ---------- 
+function enterAppAsUser(){
+   myName = myProfile.username;
+   document.getElementById('screen-auth').style.display='none';
+   document.getElementById('screen-landing').style.display='flex';
+   document.getElementById('landing-welcome').textContent = `Hey ${myProfile.first_name} — sync a video, put on music, or play a game.`;
+   const saved = getSavedSession();
+   if (saved){
+      roomCode = saved.room; isHost = saved.isHost;
+      showLandingStatus('Restoring your session…');
+      initPeer();
+      return;
+   }
+   const params = new URLSearchParams(location.search);
+   const invited = params.get('room');
+   if (invited) roomInput.value = invited;
+}
 })();
 
 // ---------- Global toggles used by other modules ----------
@@ -60,22 +71,17 @@ window.autoSyncOn = true;
 window.soundOn = true;
 
 // ---------- Landing ----------
-const nameInput = document.getElementById('input-name');
 const roomInput = document.getElementById('input-roomcode');
 function showLandingStatus(msg,isErr){ const el=document.getElementById('landing-status'); if(el){ el.textContent=msg; el.classList.toggle('err',!!isErr);} }
 
 document.getElementById('btn-create').addEventListener('click', ()=>{
-  myName = nameInput.value.trim();
-  if (!myName){ showLandingStatus('Enter your name first.', true); return; }
   roomCode = generateRoomCode(); isHost = true;
   setLandingLoading(true);
   showLandingStatus('Opening your room…');
   initPeer();
 });
 document.getElementById('btn-join').addEventListener('click', ()=>{
-  myName = nameInput.value.trim();
   const code = roomInput.value.trim().toLowerCase();
-  if (!myName){ showLandingStatus('Enter your name first.', true); return; }
   if (!code){ showLandingStatus("Enter the room code your friend sent you.", true); return; }
   roomCode = code; isHost = false;
   setLandingLoading(true);
