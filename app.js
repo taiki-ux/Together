@@ -41,18 +41,29 @@ function toast(msg){
       if (user && myProfile){
         enterAppAsUser();
       } else {
-        document.getElementById('screen-auth').style.display='flex';
+        showAuthScreen();
       }
     }, 500);
   }, 5000);
 })();
+
+// ---------- Auth screen flow ----------
+function showAuthScreen() {
+  document.getElementById('screen-auth').style.display='flex';
+  document.getElementById('screen-landing').style.display='none';
+  document.getElementById('screen-room').style.display='none';
+}
 
 // ---------- Post-login entry point ---------- 
 function enterAppAsUser(){
   myName = myProfile.username;
   document.getElementById('screen-auth').style.display='none';
   document.getElementById('screen-landing').style.display='flex';
-  document.getElementById('landing-welcome').textContent = `Hey ${myProfile.first_name} — sync a video, put on music, or play a game.`;
+  document.getElementById('screen-room').style.display='none';
+  const welcomeEl = document.getElementById('landing-welcome');
+  if (welcomeEl) {
+    welcomeEl.textContent = `Hey ${myProfile.first_name} — sync a video, put on music, or play a game.`;
+  }
   const saved = getSavedSession();
   if (saved){
     roomCode = saved.room; isHost = saved.isHost;
@@ -398,8 +409,16 @@ document.getElementById('select-mic').addEventListener('change', async function(
 });
 
 // ---------- Account (Supabase Auth) ----------
+// Refresh auth panel when auth changes
+window.onAuthChange = function(user) {
+  refreshAccountPanel(user);
+  // If user just logged in and we're on auth screen, transition to landing
+  if (user && document.getElementById('screen-auth').style.display === 'flex') {
+    enterAppAsUser();
+  }
+};
+
 restoreAuthSession().then(refreshAccountPanel);
-window.onAuthChange = refreshAccountPanel;
 function refreshAccountPanel(user){
   const out = document.getElementById('account-signed-out');
   const inn = document.getElementById('account-signed-in');
@@ -410,7 +429,63 @@ function refreshAccountPanel(user){
     out.style.display='block'; inn.style.display='none';
   }
 }
+
+// Auth screen signup
 document.getElementById('btn-signup').addEventListener('click', async ()=>{
+  const email = document.getElementById('signup-email').value.trim();
+  const password = document.getElementById('signup-password').value;
+  const firstName = document.getElementById('signup-first').value.trim();
+  const lastName = document.getElementById('signup-last').value.trim();
+  const username = document.getElementById('signup-username').value.trim();
+  
+  if (!email || !password || !firstName || !lastName || !username) {
+    showAuthStatus('Fill in all fields.', true);
+    return;
+  }
+  
+  showAuthStatus('Creating account…');
+  const { error } = await signUpWithProfile({ firstName, lastName, username, email, password });
+  if (error) {
+    showAuthStatus(error.message || 'Sign-up failed', true);
+  } else {
+    showAuthStatus('Account created! Welcome to Together.', false);
+    // The auth state change listener will trigger enterAppAsUser
+  }
+});
+
+// Auth screen login
+document.getElementById('btn-login').addEventListener('click', async ()=>{
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  if (!email || !password){ showAuthStatus('Enter an email and password.', true); return; }
+  showAuthStatus('Logging in…');
+  const { error } = await signInWithEmail(email, password);
+  if (error) showAuthStatus(error.message, true); 
+  // else the listener will trigger enterAppAsUser
+});
+
+function showAuthStatus(msg, isErr){
+  const el = document.getElementById('auth-status');
+  if (el) {
+    el.textContent = msg; 
+    el.style.color = isErr ? 'var(--coral)' : 'var(--text-muted)';
+  }
+}
+
+// Auth tab switching
+document.querySelectorAll('.auth-tab').forEach(btn => {
+  btn.addEventListener('click', function() {
+    const tab = this.dataset.tab;
+    document.querySelectorAll('.auth-tab').forEach(b => b.classList.remove('active'));
+    this.classList.add('active');
+    document.getElementById('auth-login').style.display = tab === 'login' ? 'block' : 'none';
+    document.getElementById('auth-signup').style.display = tab === 'signup' ? 'block' : 'none';
+    document.getElementById('auth-status').textContent = '';
+  });
+});
+
+// Settings panel signup/login (different from auth screen)
+document.getElementById('btn-signup').addEventListener('click', async function(e){
   const email = document.getElementById('input-email').value.trim();
   const password = document.getElementById('input-password').value;
   if (!email || !password){ showAccountStatus('Enter an email and password.', true); return; }
@@ -418,6 +493,7 @@ document.getElementById('btn-signup').addEventListener('click', async ()=>{
   const { error } = await signUpWithEmail(email, password);
   showAccountStatus(error ? error.message : 'Check your email to confirm, then log in.', !!error);
 });
+
 document.getElementById('btn-signin').addEventListener('click', async ()=>{
   const email = document.getElementById('input-email').value.trim();
   const password = document.getElementById('input-password').value;
@@ -426,10 +502,12 @@ document.getElementById('btn-signin').addEventListener('click', async ()=>{
   const { error } = await signInWithEmail(email, password);
   if (error) showAccountStatus(error.message, true); else toast('Logged in');
 });
+
 document.getElementById('btn-signout').addEventListener('click', async ()=>{
   await signOutUser();
   toast('Logged out');
 });
+
 function showAccountStatus(msg, isErr){
   const el = document.getElementById('account-status');
   el.textContent = msg; el.style.color = isErr ? 'var(--coral)' : 'var(--text-muted)';
@@ -448,3 +526,13 @@ document.getElementById('btn-save-music').addEventListener('click', ()=>{
   const title = document.getElementById('input-music-url').value.trim() || c.currentId;
   saveFavorite('music', title, c.currentId);
 });
+
+// Logout from landing page
+const landingLogout = document.getElementById('btn-landing-logout');
+if (landingLogout) {
+  landingLogout.addEventListener('click', async ()=>{
+    await signOutUser();
+    showAuthScreen();
+    toast('Logged out');
+  });
+}
