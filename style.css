@@ -28,6 +28,12 @@ h1,h2,h3,.display{font-family:'Fraunces',serif;}
 button{font-family:inherit;cursor:pointer;}
 input,select{font-family:inherit;}
 
+
+/* ================= Auth tabs ================= */
+.auth-tabs{ display:flex; gap:6px; background:var(--bg-panel-2); border:1px solid var(--line); border-radius:999px; padding:4px; margin:18px 0 20px; }
+.auth-tab{ flex:1; border:none; background:transparent; color:var(--text-muted); border-radius:999px; padding:8px; font-size:13px; font-weight:700; }
+.auth-tab.active{ background:linear-gradient
+                 
 /* ================= SPLASH ================= */
 #screen-splash{
   position:fixed; inset:0; z-index:100;
