@@ -8,13 +8,13 @@
 
 // ---------- Utils ----------
 function generateRoomCode(){
-  const ADJ = ['amber','coral','cosmic','velvet','lunar','ember','misty','golden','quiet','wandering','hazy','soft'];
-  const NOUN = ['otter','comet','harbor','ember','willow','falcon','tide','maple','nova','drift','ridge','lark'];
-  const a = ADJ[Math.floor(Math.random()*ADJ.length)];
-  const n = NOUN[Math.floor(Math.random()*NOUN.length)];
-  const num = Math.floor(Math.random()*90+10);
-  return `${a}-${n}-${num}`;
+  // Cryptographically random 24-char hex — not guessable, unlike the old
+  // friendly word-pair codes. A little less pretty to share, a lot safer.
+  const bytes = new Uint8Array(12);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
 }
+
 function nameColor(name){
   let hash=0;
   for(let i=0;i<name.length;i++){ hash = name.charCodeAt(i) + ((hash<<5)-hash); }
