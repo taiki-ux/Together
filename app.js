@@ -68,12 +68,35 @@ function showAuthScreen() {
 
 // ---------- Post-login entry point ---------- 
 function enterAppAsUser(){
-  // Guard: ensure myProfile exists before accessing
-  if (!myProfile) {
-    console.error('myProfile is null, cannot enter app');
-    showAuthScreen();
-    return;
+   if (!myProfile) { console.error('myProfile is null, cannot enter app'); showAuthScreen(); return; }
+   myName = myProfile.username;
+   document.getElementById('screen-auth').style.display='none';
+   
+   const saved = getSavedSession();
+   if (saved){
+      document.getElementById('screen-landing').style.display='flex';
+      roomCode = saved.room; isHost = saved.isHost; requireApproval = false;
+      showLandingStatus('Restoring your session…');
+      initPeer();
+      return;
+   }
+   
+   const params = new URLSearchParams(location.search);
+   const invited = params.get('room');
+   if (invited){
+       document.getElementById('screen-landing').style.display='flex';
+       roomInput.value = invited;
+       cameFromInviteLink = true;
+       return;
   }
+   document.getElementById('screen-saved-rooms').style.display='flex';
+   renderSavedRoomsScreen();
+}
+document.getElementById('btn-saved-rooms-logout').addEventListener('click', async ()=>{
+   await signOutUser();
+   location.reload();
+});
+
   
   myName = myProfile.username || 'User';
   document.getElementById('screen-auth').style.display='none';
@@ -105,20 +128,20 @@ window.soundOn = true;
 const roomInput = document.getElementById('input-roomcode');
 function showLandingStatus(msg,isErr){ const el=document.getElementById('landing-status'); if(el){ el.textContent=msg; el.classList.toggle('err',!!isErr);} }
 
-document.getElementById('btn-create').addEventListener('click', ()=>{
-  roomCode = generateRoomCode(); isHost = true;
-  setLandingLoading(true);
-  showLandingStatus('Opening your room…');
-  initPeer();
-});
+// Tracks whether the current room code in the input came from a trusted
+// invite link (skips the knock) vs. being typed/edited by hand (requires it).
+let cameFromInviteLink = false;
+roomInput.addEventListener('input', ()=>{ cameFromInviteLink = false; });
 document.getElementById('btn-join').addEventListener('click', ()=>{
-  const code = roomInput.value.trim().toLowerCase();
-  if (!code){ showLandingStatus("Enter the room code your friend sent you.", true); return; }
-  roomCode = code; isHost = false;
-  setLandingLoading(true);
-  showLandingStatus('Joining…');
-  initPeer();
+   const code = roomInput.value.trim().toLowerCase();
+   if (!code){ showLandingStatus("Enter the room code your friend sent you.", true); return; }
+   roomCode = code; isHost = false;
+   requireApproval = !cameFromInviteLink;
+   setLandingLoading(true);
+   showLandingStatus('Joining…');
+   initPeer();
 });
+
 function setLandingLoading(loading){
   document.getElementById('btn-create').disabled = loading;
   document.getElementById('btn-join').disabled = loading;
