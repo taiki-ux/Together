@@ -58,6 +58,23 @@
   </div>
 </div>
 
+  <!-- ================= SAVED ROOMS ================= -->
+<div id="screen-saved-rooms" style="display:none; min-height:100vh; align-items:center; justify-content:center; padding:24px;">
+  <div class="landing-card">
+    <div class="eyebrow">watch · listen · play</div>
+    <h1>Your rooms</h1>
+    <p class="sub">Rooms you've saved. Jump back in, or start something new.</p>
+
+    <div id="saved-rooms-list" class="saved-rooms-list"></div>
+    <div id="saved-rooms-empty" style="display:none;" class="saved-rooms-empty">
+      <p class="hint">No saved rooms yet — create one, then save it from inside the room to see it here.</p>
+    </div>
+
+    <button class="btn btn-primary btn-block" id="btn-new-room" style="margin-top:18px;">+ Create or join a room</button>
+    <button class="btn btn-ghost btn-sm btn-block" id="btn-saved-rooms-logout" style="margin-top:10px;">Log out</button>
+  </div>
+</div>
+  
 <div id="screen-landing" style="display:none; min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px;">
   <div class="landing-card">
     <button class="btn btn-ghost btn-sm btn-block" id="btn-landing-logout" style="margin-top:14px;">Log out</button>
@@ -79,6 +96,7 @@
     </div>
 
     <div id="landing-status"></div>
+    <button class="btn btn-ghost btn-sm btn-block" id="btn-back-to-rooms" style="margin-top:10px;">← Your rooms</button>
   </div>
 </div>
 
@@ -94,7 +112,16 @@
         <button class="icon-btn" id="entry-btn-copy" title="Copy room code">⧉</button>
         <button class="icon-btn" id="entry-btn-invite" title="Copy invite link">🔗</button>
       </div>
-      <button class="btn btn-ghost btn-sm" id="entry-btn-leave">Leave</button>
+      <div style="display:flex; gap:8px;">
+    <button class="btn btn-ghost btn-sm" id="entry-btn-save-room">💾 Save room</button>
+    <button class="btn btn-ghost btn-sm" id="entry-btn-leave">Leave</button>
+  </div>
+</div>
+<div class="save-room-bar" id="save-room-bar" style="display:none;">
+  <input type="text" id="save-room-name" placeholder="Name this room…" maxlength="40">
+  <button class="btn btn-secondary btn-sm" id="btn-save-room-confirm">Save</button>
+  <button class="btn btn-ghost btn-sm" id="btn-save-room-cancel">Cancel</button>
+</div>
     </div>
     <h2>What are we doing tonight?</h2>
     <p class="sub">Pick something to get started.</p>
@@ -340,6 +367,7 @@
 
 <!-- Feature modules (depends on config) -->
 <script src="peer-manager.js"></script>
+<script src="rooms.js"></script>
 <script src="youtube-sync.js"></script>
 <script src="music-player.js"></script>
 <script src="playlists.js"></script>
