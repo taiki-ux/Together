@@ -300,22 +300,10 @@
     <div class="field" style="margin:6px 0 14px;"><input type="text" id="input-rename" maxlength="20"></div>
     <button class="btn btn-ghost btn-block btn-sm" id="btn-rename-save" style="margin-bottom:6px;">Save name</button>
 
-    <div class="settings-row">
-      <div><div class="lbl">Account</div><div class="desc">Sign in to save favorites across sessions</div></div>
-    </div>
-    <div id="account-signed-out">
-      <div class="field" style="margin:6px 0 8px;"><input type="text" id="input-email" placeholder="Email"></div>
-      <div class="field" style="margin:0 0 10px;"><input type="password" id="input-password" placeholder="Password"></div>
-      <div style="display:flex; gap:8px; margin-bottom:6px;">
-        <button class="btn btn-secondary btn-sm" style="flex:1;" id="btn-signin">Log in</button>
-        <button class="btn btn-ghost btn-sm" style="flex:1;" id="btn-signup">Sign up</button>
-      </div>
-      <p class="hint" id="account-status" style="min-height:16px;"></p>
-    </div>
-    <div id="account-signed-in" style="display:none;">
-      <p class="hint" style="margin-bottom:8px;">Signed in as <b id="account-email"></b></p>
-      <button class="btn btn-ghost btn-block btn-sm" id="btn-signout">Log out</button>
-    </div>
+<div class="settings-row">
+  <div><div class="lbl">Account</div><div class="desc" id="settings-account-desc">—</div></div>
+</div>
+<button class="btn btn-ghost btn-block btn-sm" id="btn-settings-logout" style="margin-bottom:6px;">Log out</button>
 
     <div class="settings-row" style="margin-top:6px;">
       <div><div class="lbl">Microphone</div><div class="desc">Choose which mic to use for voice</div></div>
