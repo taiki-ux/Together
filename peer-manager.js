@@ -171,7 +171,6 @@ function joinRoomPresence(){
       if (window.onKnockReceived) window.onKnockReceived(payload);
     })
     .subscribe(async (status)=>{
-    .subscribe(async (status)=>{
       if (status === 'SUBSCRIBED') await roomChannel.track({ peerId: myId, name: myName });
     });
 }
