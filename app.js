@@ -62,8 +62,8 @@ function toastSuccess(msg) {
 // ---------- Auth screen flow ----------
 function showAuthScreen() {
   document.getElementById('screen-auth').style.display='flex';
-  document.getElementById('screen-landing').style.display='none';
-  document.getElementById('screen-room').style.display='none';
+  document.getElementById('screen-landing').style.display='hide';
+  document.getElementById('screen-room').style.display='hide';
 }
 
 // ---------- Post-login entry point ---------- 
