@@ -68,38 +68,34 @@ function showAuthScreen() {
 
 // ---------- Post-login entry point ---------- 
 function enterAppAsUser(){
-   if (!myProfile) { console.error('myProfile is null, cannot enter app'); showAuthScreen(); return; }
-   myName = myProfile.username;
-   document.getElementById('screen-auth').style.display='none';
-   
-   const saved = getSavedSession();
-   if (saved){
-      document.getElementById('screen-landing').style.display='flex';
-      roomCode = saved.room; isHost = saved.isHost; requireApproval = false;
-      showLandingStatus('Restoring your session…');
-      initPeer();
-      return;
-   }
-   
-   const params = new URLSearchParams(location.search);
-   const invited = params.get('room');
-   if (invited){
-       document.getElementById('screen-landing').style.display='flex';
-       roomInput.value = invited;
-       cameFromInviteLink = true;
-       return;
+  // Guard: ensure myProfile exists before accessing
+  if (!myProfile) {
+    console.error('myProfile is null, cannot enter app');
+    showAuthScreen();
+    return;
   }
-   document.getElementById('screen-saved-rooms').style.display='flex';
-   renderSavedRoomsScreen();
+  
+  myName = myProfile.username || 'User';
+  document.getElementById('screen-auth').style.display='none';
+  document.getElementById('screen-landing').style.display='flex';
+  document.getElementById('screen-room').style.display='none';
+  
+  const welcomeEl = document.getElementById('landing-welcome');
+  if (welcomeEl) {
+    welcomeEl.textContent = `Hey ${myProfile.first_name} — sync a video, put on music, or play a game.`;
+  }
+  
+  const saved = getSavedSession();
+  if (saved){
+    roomCode = saved.room; isHost = saved.isHost;
+    showLandingStatus('Restoring your session…');
+    initPeer();
+    return;
+  }
+  const params = new URLSearchParams(location.search);
+  const invited = params.get('room');
+  if (invited) roomInput.value = invited;
 }
-document.getElementById('btn-saved-rooms-logout').addEventListener('click', async ()=>{
-   await signOutUser();
-   location.reload();
-});
-
-  
-
-  
 
 // ---------- Global toggles used by other modules ----------
 window.autoSyncOn = true;
@@ -109,20 +105,20 @@ window.soundOn = true;
 const roomInput = document.getElementById('input-roomcode');
 function showLandingStatus(msg,isErr){ const el=document.getElementById('landing-status'); if(el){ el.textContent=msg; el.classList.toggle('err',!!isErr);} }
 
-// Tracks whether the current room code in the input came from a trusted
-// invite link (skips the knock) vs. being typed/edited by hand (requires it).
-let cameFromInviteLink = false;
-roomInput.addEventListener('input', ()=>{ cameFromInviteLink = false; });
-document.getElementById('btn-join').addEventListener('click', ()=>{
-   const code = roomInput.value.trim().toLowerCase();
-   if (!code){ showLandingStatus("Enter the room code your friend sent you.", true); return; }
-   roomCode = code; isHost = false;
-   requireApproval = !cameFromInviteLink;
-   setLandingLoading(true);
-   showLandingStatus('Joining…');
-   initPeer();
+document.getElementById('btn-create').addEventListener('click', ()=>{
+  roomCode = generateRoomCode(); isHost = true;
+  setLandingLoading(true);
+  showLandingStatus('Opening your room…');
+  initPeer();
 });
-
+document.getElementById('btn-join').addEventListener('click', ()=>{
+  const code = roomInput.value.trim().toLowerCase();
+  if (!code){ showLandingStatus("Enter the room code your friend sent you.", true); return; }
+  roomCode = code; isHost = false;
+  setLandingLoading(true);
+  showLandingStatus('Joining…');
+  initPeer();
+});
 function setLandingLoading(loading){
   document.getElementById('btn-create').disabled = loading;
   document.getElementById('btn-join').disabled = loading;
@@ -502,6 +498,25 @@ document.querySelectorAll('.auth-tab').forEach(btn => {
   });
 });
 
+// Settings panel signin/signup (different from auth screen)
+document.getElementById('btn-signin').addEventListener('click', async function(e){
+  const email = document.getElementById('input-email').value.trim();
+  const password = document.getElementById('input-password').value;
+  if (!email || !password){ showAccountStatus('Enter an email and password.', true); return; }
+  showAccountStatus('Logging in…');
+  const { error } = await signInWithEmail(email, password);
+  if (error) showAccountStatus(error.message, true); else toast('Logged in');
+});
+
+document.getElementById('btn-signout').addEventListener('click', async ()=>{
+  await signOutUser();
+  toast('Logged out');
+});
+
+function showAccountStatus(msg, isErr){
+  const el = document.getElementById('account-status');
+  el.textContent = msg; el.style.color = isErr ? 'var(--coral)' : 'var(--text-muted)';
+}
 
 // ---------- Save to playlist ----------
 document.getElementById('btn-save-video').addEventListener('click', ()=>{
