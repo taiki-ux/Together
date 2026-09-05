@@ -1,380 +1,585 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Together — watch, listen, play</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;0,700;1,500&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%23ff6f91'/%3E%3Cstop offset='50%25' stop-color='%23ffd166'/%3E%3Cstop offset='100%25' stop-color='%235ee6d0'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='32' cy='32' r='30' fill='url(%23g)'/%3E%3Cpath d='M26 20 L46 32 L26 44 Z' fill='%230b0f1a'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css">
-</head>
-<body>
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Together — watch, listen, play</title><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;0,700;1,500&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet"><link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%23ff6f91'/%3E%3Cstop offset='50%25' stop-color='%23ffd166'/%3E%3Cstop offset='100%25' stop-color='%235ee6d0'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='32' cy='32' r='30' fill='url(%23g)'/%3E%3Cpath d='M26 20 L46 32 L26 44 Z' fill='%230b0f1a'/%3E%3C/svg%3E"><link rel="stylesheet" href="style.css"></head><body><!-- ================= SPLASH (5s, no skip) ================= --><div id="screen-splash">  <div class="splash-ring"></div>  <div class="splash-ring r2"></div>  <div class="splash-content"><h1 class="splash-title">Together</h1>
 
-<!-- ================= SPLASH (5s, no skip) ================= -->
-<div id="screen-splash">
-  <div class="splash-ring"></div>
-  <div class="splash-ring r2"></div>
-  <div class="splash-content">
-    <h1 class="splash-title">Together</h1>
-    <div class="splash-sub">enjoy · made by <b>Taiki Ryuzaki</b></div>
-  </div>
+<div class="splash-sub">enjoy · made by <b>Taiki Ryuzaki</b></div>
+
+  </div></div><!-- ================= LANDING ================= --><!-- ================= AUTH (sign up / log in) ================= --><div id="screen-auth" style="display:none; min-height:100vh; align-items:center; justify-content:center; padding:24px;">  <div class="landing-card"><div class="eyebrow">watch · listen · play</div>
+
+<h1>Together</h1>
+
+<p class="sub">Create an account or log in to get started.</p>
+
+
+
+<div class="auth-tabs">
+
+  <button class="auth-tab active" data-tab="login">Log in</button>
+
+  <button class="auth-tab" data-tab="signup">Sign up</button>
+
 </div>
 
-<!-- ================= LANDING ================= -->
-<!-- ================= AUTH (sign up / log in) ================= -->
-<div id="screen-auth" style="display:none; min-height:100vh; align-items:center; justify-content:center; padding:24px;">
-  <div class="landing-card">
-    <div class="eyebrow">watch · listen · play</div>
-    <h1>Together</h1>
-    <p class="sub">Create an account or log in to get started.</p>
-    
-    <div class="auth-tabs">
-      <button class="auth-tab active" data-tab="login">Log in</button>
-      <button class="auth-tab" data-tab="signup">Sign up</button>
-    </div>
-    
-    <div id="auth-login">
-      <div class="field"><label>Email</label><input type="text" id="login-email" placeholder="you@example.com"></div>
-      <div class="field"><label>Password</label><input type="password" id="login-password" placeholder="Your password"></div>
-      <button class="btn btn-primary btn-block" id="btn-login">Log in</button>
-    </div>
-    
-    <div id="auth-signup" style="display:none;">
-      <div class="split" style="margin-top:0;">
-        <div class="field"><label>First name</label><input type="text" id="signup-first"></div>
-        <div class="field"><label>Last name</label><input type="text" id="signup-last"></div>
-      </div>
-      <div class="field">
-        <label>Nickname</label>
-        <input type="text" id="signup-username" placeholder="Shown in chat & the room" maxlength="20">
-        <p class="hint" id="username-status" style="margin-top:4px;">This is your display name everywhere in the app — like a username, and it must be unique.</p>
-      </div>
-      <div class="field"><label>Email</label><input type="text" id="signup-email" placeholder="you@example.com"></div>
-      <div class="field"><label>Password</label><input type="password" id="signup-password" placeholder="At least 6 characters"></div>
-      <button class="btn btn-primary btn-block" id="btn-signup">Create account</button>
-    </div>
-    
-    <div id="auth-status" style="margin-top:16px; font-size:13px; color:var(--text-muted); min-height:18px;"></div>
-  </div>
+
+
+<div id="auth-login">
+
+  <div class="field"><label>Email</label><input type="text" id="login-email" placeholder="you@example.com"></div>
+
+  <div class="field"><label>Password</label><input type="password" id="login-password" placeholder="Your password"></div>
+
+  <button class="btn btn-primary btn-block" id="btn-login">Log in</button>
+
 </div>
 
-  <!-- ================= SAVED ROOMS ================= -->
-<div id="screen-saved-rooms" style="display:none; min-height:100vh; align-items:center; justify-content:center; padding:24px;">
-  <div class="landing-card">
-    <div class="eyebrow">watch · listen · play</div>
-    <h1>Your rooms</h1>
-    <p class="sub">Rooms you've saved. Jump back in, or start something new.</p>
 
-    <div id="saved-rooms-list" class="saved-rooms-list"></div>
-    <div id="saved-rooms-empty" style="display:none;" class="saved-rooms-empty">
-      <p class="hint">No saved rooms yet — create one, then save it from inside the room to see it here.</p>
-    </div>
 
-    <button class="btn btn-primary btn-block" id="btn-new-room" style="margin-top:18px;">+ Create or join a room</button>
-    <button class="btn btn-ghost btn-sm btn-block" id="btn-saved-rooms-logout" style="margin-top:10px;">Log out</button>
-  </div>
-</div>
-  
-<div id="screen-landing" style="display:none; min-height:100vh; align-items:center; justify-content:center; padding:24px;">
-  <div class="landing-card">
-    <button class="btn btn-ghost btn-sm btn-block" id="btn-landing-logout" style="margin-top:14px;">Log out</button>
-    <div class="eyebrow">watch · listen · play</div>
-    <h1>Together</h1>
-    <p class="sub">Sync a video, put on music, or play a game — with whoever's far away tonight.</p>
+<div id="auth-signup" style="display:none;">
 
-    <div class="split">
-      <div class="option-box">
-        <h3>🎬 Start a room</h3>
-        <p class="hint">You'll get a room code to share.</p>
-        <button class="btn btn-primary btn-block" id="btn-create">Create room</button>
-      </div>
-      <div class="option-box">
-        <h3>🔗 Join a room</h3>
-        <input type="text" id="input-roomcode" placeholder="room code">
-        <button class="btn btn-secondary btn-block" id="btn-join">Join room</button>
-      </div>
-    </div>
+  <div class="split" style="margin-top:0;">
 
-    <div id="landing-status"></div>
-    <button class="btn btn-ghost btn-sm btn-block" id="btn-back-to-rooms" style="margin-top:10px;">← Your rooms</button>
-  </div>
-</div>
+    <div class="field"><label>First name</label><input type="text" id="signup-first"></div>
 
-<!-- ================= ROOM ================= -->
-<div id="screen-room">
+    <div class="field"><label>Last name</label><input type="text" id="signup-last"></div>
 
-  <!-- Entry gate: choice only, no chat / voice / menu / settings -->
-  <div id="entry-hub">
-    <div class="entry-topline">
-      <div class="roomcode-pill">
-        <span>Room</span>
-        <span class="code mono" id="entry-room-code">—</span>
-        <button class="icon-btn" id="entry-btn-copy" title="Copy room code">⧉</button>
-        <button class="icon-btn" id="entry-btn-invite" title="Copy invite link">🔗</button>
-      </div>
-      <div style="display:flex; gap:8px;">
-    <button class="btn btn-ghost btn-sm" id="entry-btn-save-room">💾 Save room</button>
-    <button class="btn btn-ghost btn-sm" id="entry-btn-leave">Leave</button>
-  </div>
-</div>
-<div class="save-room-bar" id="save-room-bar" style="display:none;">
-  <input type="text" id="save-room-name" placeholder="Name this room…" maxlength="40">
-  <button class="btn btn-secondary btn-sm" id="btn-save-room-confirm">Save</button>
-  <button class="btn btn-ghost btn-sm" id="btn-save-room-cancel">Cancel</button>
-</div>
-    </div>
-    <h2>What are we doing tonight?</h2>
-    <p class="sub">Pick something to get started.</p>
-    <div class="hub-grid">
-      <div class="hub-card" data-mode="video">
-        <div class="emoji">🎬</div>
-        <h3>Watch videos</h3>
-        <p>Sync a YouTube video for the group</p>
-      </div>
-      <div class="hub-card" data-mode="music">
-        <div class="emoji">🎵</div>
-        <h3>Listen to music</h3>
-        <p>Put a track on together, chat while it plays</p>
-      </div>
-      <div class="hub-card" data-mode="games">
-        <div class="emoji">🎮</div>
-        <h3>Play games</h3>
-        <p>Trivia, party games &amp; duels</p>
-      </div>
-    </div>
   </div>
 
-  <!-- Activity shell: appears once a mode is chosen -->
-  <div id="activity-shell">
-    <div class="topbar">
-      <div class="brand"><span class="brand-dot"></span><span>Together</span></div>
-      <div class="mode-nav">
-        <button class="nav-btn" data-mode="video">🎬 Watch</button>
-        <button class="nav-btn" data-mode="music">🎵 Music</button>
-        <button class="nav-btn" data-mode="games">🎮 Play</button>
-      </div>
-      <div class="topbar-right">
-        <div class="roomcode-pill">
-          <span>Room</span>
-          <span class="code mono" id="room-code-display">—</span>
-          <button class="icon-btn" id="btn-copy" title="Copy room code">⧉</button>
-          <button class="icon-btn" id="btn-invite" title="Copy invite link">🔗</button>
-        </div>
-        <button class="icon-btn" id="btn-settings" title="Settings">⚙</button>
-        <button class="btn btn-ghost btn-sm" id="btn-leave">Leave</button>
-      </div>
+  <div class="field">
+
+    <label>Nickname</label>
+
+    <input type="text" id="signup-username" placeholder="Shown in chat & the room" maxlength="20">
+
+    <p class="hint" id="username-status" style="margin-top:4px;">This is your display name everywhere in the app — like a username, and it must be unique.</p>
+
+  </div>
+
+  <div class="field"><label>Email</label><input type="text" id="signup-email" placeholder="you@example.com"></div>
+
+  <div class="field"><label>Password</label><input type="password" id="signup-password" placeholder="At least 6 characters"></div>
+
+  <button class="btn btn-primary btn-block" id="btn-signup">Create account</button>
+
+</div>
+
+
+
+<div id="auth-status" style="margin-top:16px; font-size:13px; color:var(--text-muted); min-height:18px;"></div>
+
+  </div></div>  <!-- ================= SAVED ROOMS ================= --><div id="screen-saved-rooms" style="display:none; min-height:100vh; align-items:center; justify-content:center; padding:24px;">  <div class="landing-card"><div class="eyebrow">watch · listen · play</div>
+
+<h1>Your rooms</h1>
+
+<p class="sub">Rooms you've saved. Jump back in, or start something new.</p>
+
+
+
+<div id="saved-rooms-list" class="saved-rooms-list"></div>
+
+<div id="saved-rooms-empty" style="display:none;" class="saved-rooms-empty">
+
+  <p class="hint">No saved rooms yet — create one, then save it from inside the room to see it here.</p>
+
+</div>
+
+
+
+<button class="btn btn-primary btn-block" id="btn-new-room" style="margin-top:18px;">+ Create or join a room</button>
+
+<button class="btn btn-ghost btn-sm btn-block" id="btn-saved-rooms-logout" style="margin-top:10px;">Log out</button>
+
+  </div></div><div id="screen-landing" style="display:none; min-height:100vh; align-items:center; justify-content:center; padding:24px;">  <div class="landing-card"><button class="btn btn-ghost btn-sm btn-block" id="btn-landing-logout" style="margin-top:14px;">Log out</button>
+
+<div class="eyebrow">watch · listen · play</div>
+
+<h1>Together</h1>
+
+<p class="sub">Sync a video, put on music, or play a game — with whoever's far away tonight.</p>
+
+
+
+<div class="split">
+
+  <div class="option-box">
+
+    <h3>🎬 Start a room</h3>
+
+    <p class="hint">You'll get a room code to share.</p>
+
+    <button class="btn btn-primary btn-block" id="btn-create">Create room</button>
+
+  </div>
+
+  <div class="option-box">
+
+    <h3>🔗 Join a room</h3>
+
+    <input type="text" id="input-roomcode" placeholder="room code">
+
+    <button class="btn btn-secondary btn-block" id="btn-join">Join room</button>
+
+  </div>
+
+</div>
+
+
+
+<div id="landing-status"></div>
+
+<button class="btn btn-ghost btn-sm btn-block" id="btn-back-to-rooms" style="margin-top:10px;">← Your rooms</button>
+
+  </div></div><!-- ================= ROOM ================= --><div id="screen-room">  <!-- Entry gate: choice only, no chat / voice / menu / settings -->  <div id="entry-hub"><div class="entry-topline">
+
+  <div class="roomcode-pill">
+
+    <span>Room</span>
+
+    <span class="code mono" id="entry-room-code">—</span>
+
+    <button class="icon-btn" id="entry-btn-copy" title="Copy room code">⧉</button>
+
+    <button class="icon-btn" id="entry-btn-invite" title="Copy invite link">🔗</button>
+
+  </div>
+
+  <div style="display:flex; gap:8px;">
+
+<button class="btn btn-ghost btn-sm" id="entry-btn-save-room">💾 Save room</button>
+
+<button class="btn btn-ghost btn-sm" id="entry-btn-leave">Leave</button>
+
+  </div></div><div class="save-room-bar" id="save-room-bar" style="display:none;">  <input type="text" id="save-room-name" placeholder="Name this room…" maxlength="40"><button class="btn btn-secondary btn-sm" id="btn-save-room-confirm">Save</button>
+
+<button class="btn btn-ghost btn-sm" id="btn-save-room-cancel">Cancel</button>
+
+</div></div>
+
+<h2>What are we doing tonight?</h2>
+
+<p class="sub">Pick something to get started.</p>
+
+<div class="hub-grid">
+
+  <div class="hub-card" data-mode="video">
+
+    <div class="emoji">🎬</div>
+
+    <h3>Watch videos</h3>
+
+    <p>Sync a YouTube video for the group</p>
+
+  </div>
+
+  <div class="hub-card" data-mode="music">
+
+    <div class="emoji">🎵</div>
+
+    <h3>Listen to music</h3>
+
+    <p>Put a track on together, chat while it plays</p>
+
+  </div>
+
+  <div class="hub-card" data-mode="games">
+
+    <div class="emoji">🎮</div>
+
+    <h3>Play games</h3>
+
+    <p>Trivia, party games &amp; duels</p>
+
+  </div>
+
+</div>
+
+  </div>  <!-- Activity shell: appears once a mode is chosen -->  <div id="activity-shell"><div class="topbar">
+
+  <div class="brand"><span class="brand-dot"></span><span>Together</span></div>
+
+  <div class="mode-nav">
+
+    <button class="nav-btn" data-mode="video">🎬 Watch</button>
+
+    <button class="nav-btn" data-mode="music">🎵 Music</button>
+
+    <button class="nav-btn" data-mode="games">🎮 Play</button>
+
+  </div>
+
+  <div class="topbar-right">
+
+    <div class="roomcode-pill">
+
+      <span>Room</span>
+
+      <span class="code mono" id="room-code-display">—</span>
+
+      <button class="icon-btn" id="btn-copy" title="Copy room code">⧉</button>
+
+      <button class="icon-btn" id="btn-invite" title="Copy invite link">🔗</button>
+
     </div>
 
-    <div class="room-body">
-      <div class="main-col">
+    <button class="icon-btn" id="btn-settings" title="Settings">⚙</button>
 
-        <!-- VIDEO -->
-        <div class="pane" id="pane-video">
-          <div class="video-frame">
-            <div id="yt-player-video"></div>
-            <div class="video-placeholder" id="video-placeholder">
-              <div class="glow">▶</div>
-              <div>Paste a YouTube link below to start the night</div>
-            </div>
-          </div>
-          <div class="load-row">
-            <input type="text" id="input-video-url" placeholder="Paste a YouTube URL or video ID…">
-            <button class="btn btn-primary" id="btn-load-video">Load</button>
-            <button class="btn btn-ghost" id="btn-save-video" title="Save to your playlist">⭐</button>
-          </div>
-          <div class="controls-row">
-            <button class="btn btn-ghost btn-sm" id="btn-play-video">▶ Play</button>
-            <button class="btn btn-ghost btn-sm" id="btn-pause-video">⏸ Pause</button>
-            <button class="btn btn-ghost btn-sm" id="btn-sync-video">🔄 Sync everyone to me</button>
-            <button class="btn btn-ghost btn-sm" id="btn-fullscreen">⛶ Full screen</button>
-            <div class="seek-group">
-              <span class="hint">Jump to</span>
-              <input type="text" id="input-seek-video" placeholder="1:23">
-              <button class="btn btn-ghost btn-sm" id="btn-seek-video">Go</button>
-            </div>
-          </div>
-          <p class="hint">Synced to the whole room automatically. This mode is voice-only — the chat panel is reserved for Music, so everyone stays focused on the screen.</p>
-        </div>
+    <button class="btn btn-ghost btn-sm" id="btn-leave">Leave</button>
 
-        <!-- MUSIC -->
-        <div class="pane" id="pane-music">
-          <div class="music-card">
-            <div class="vinyl" id="vinyl"></div>
-            <div class="music-meta">
-              <div class="label">Now playing, together</div>
-              <h3 id="music-title">Nothing queued yet</h3>
-              <div class="bars" id="music-bars"><i></i><i></i><i></i><i></i><i></i><i></i></div>
-            </div>
-            <div class="music-yt" id="yt-player-music"></div>
-          </div>
+  </div>
 
-          <div class="load-row">
-            <input type="text" id="input-music-url" placeholder="Paste a YouTube or Spotify link…">
-            <button class="btn btn-violet" id="btn-load-music">Play</button>
-            <button class="btn btn-ghost" id="btn-save-music" title="Save to your playlist">⭐</button>
-          </div>
-          <div class="controls-row" id="music-sync-controls">
-            <button class="btn btn-ghost btn-sm" id="btn-play-music">▶ Play</button>
-            <button class="btn btn-ghost btn-sm" id="btn-pause-music">⏸ Pause</button>
-            <button class="btn btn-ghost btn-sm" id="btn-sync-music">🔄 Sync everyone to me</button>
-            <div class="seek-group">
-              <span class="hint">Jump to</span>
-              <input type="text" id="input-seek-music" placeholder="1:23">
-              <button class="btn btn-ghost btn-sm" id="btn-seek-music">Go</button>
-            </div>
-          </div>
+</div>
 
-          <div class="divider-or">or</div>
 
-          <div class="local-audio-row">
-            <input type="file" id="input-local-file" accept="audio/*" style="display:none;">
-            <button class="btn btn-ghost btn-sm" id="btn-pick-local">📂 Play a file from your device</button>
-            <span class="hint">Local files only play for you — for a synced group listen, paste a link above.</span>
-          </div>
-          <audio id="local-audio-player" controls style="width:100%; display:none;"></audio>
 
-          <p class="hint">Same sync engine as the video room. Chat's open here — type freely, or mention <b>@ai</b> for a joke or a recommendation.</p>
-        </div>
+<div class="room-body">
 
-        <!-- GAMES -->
-        <div class="pane" id="pane-games">
-          <div id="games-picker">
-            <h3 class="games-heading">Pick a category</h3>
-            <div class="category-grid" id="category-grid"></div>
-          </div>
+  <div class="main-col">
 
-          <div id="category-detail" style="display:none;">
-            <button class="back-link" id="btn-back-categories">← Categories</button>
-            <h3 class="games-heading" id="category-detail-title"></h3>
-            <div class="game-grid" id="category-game-grid"></div>
-          </div>
 
-          <div class="game-panel" id="game-trivia" style="display:none;">
-            <button class="back-link" data-back-game>← Games</button>
-            <div id="trivia-body">
-              <p class="hint">Everyone answers, then it reveals after 10 seconds.</p>
-              <button class="btn btn-primary" id="btn-trivia-start">Start Trivia</button>
-            </div>
-          </div>
 
-          <div class="game-panel" id="game-wyr" style="display:none;">
-            <button class="back-link" data-back-game>← Games</button>
-            <div id="wyr-body">
-              <p class="hint">Pick a side and watch how the room votes, live.</p>
-              <button class="btn btn-violet" id="btn-wyr-start">Start</button>
-            </div>
-          </div>
+    <!-- VIDEO -->
 
-          <div class="game-panel" id="game-ttt" style="display:none;">
-            <button class="back-link" data-back-game>← Games</button>
-            <div id="ttt-body">
-              <p class="hint">Pick someone in the room to challenge.</p>
-              <div class="ttt-opponents" id="ttt-opponent-list"></div>
-            </div>
-          </div>
+    <div class="pane" id="pane-video">
 
-          <div class="game-panel" id="game-tot" style="display:none;">
-            <button class="back-link" data-back-game>← Games</button>
-            <div id="tot-body">
-              <p class="hint">Pick a side and watch how the room votes, live.</p>
-              <button class="btn btn-violet" id="btn-tot-start">Start</button>
-            </div>
-          </div>
+      <div class="video-frame">
 
-          <div class="game-panel" id="game-woa" style="display:none;">
-            <button class="back-link" data-back-game>← Games</button>
-            <div id="woa-body">
-              <p class="hint">Everyone answers the prompt on purpose wrong — funniest answer wins the room's laugh.</p>
-              <button class="btn btn-primary" id="btn-woa-start">Start round</button>
-            </div>
-          </div>
+        <div id="yt-player-video"></div>
+
+        <div class="video-placeholder" id="video-placeholder">
+
+          <div class="glow">▶</div>
+
+          <div>Paste a YouTube link below to start the night</div>
+
         </div>
 
       </div>
 
-      <div class="side-col">
-        <div class="constellation">
-          <h4 id="participant-count">In the room</h4>
-          <div class="orbit" id="orbit"></div>
-          <div class="mic-row">
-            <button class="btn btn-secondary btn-sm" id="btn-mic" style="flex:1;">🎤 Join voice</button>
-          </div>
-          <div id="chat-toggle-wrap">
-            <button class="btn btn-ghost btn-sm btn-block" id="btn-chat-toggle">💬 Open chat</button>
-          </div>
-        </div>
-        <div class="chat-col" id="chat-col">
-          <div class="chat-log" id="chat-log"></div>
-          <p class="chat-hint">Tip: mention <b>@ai</b> for a joke, a movie pick, or a song pick.</p>
-          <div class="chat-input-row">
-            <input type="text" id="input-chat" placeholder="Say something…" maxlength="500">
-            <button class="btn btn-primary" id="btn-send">Send</button>
-          </div>
-        </div>
+      <div class="load-row">
+
+        <input type="text" id="input-video-url" placeholder="Paste a YouTube URL or video ID…">
+
+        <button class="btn btn-primary" id="btn-load-video">Load</button>
+
+        <button class="btn btn-ghost" id="btn-save-video" title="Save to your playlist">⭐</button>
+
       </div>
+
+      <div class="controls-row">
+
+        <button class="btn btn-ghost btn-sm" id="btn-play-video">▶ Play</button>
+
+        <button class="btn btn-ghost btn-sm" id="btn-pause-video">⏸ Pause</button>
+
+        <button class="btn btn-ghost btn-sm" id="btn-sync-video">🔄 Sync everyone to me</button>
+
+        <button class="btn btn-ghost btn-sm" id="btn-fullscreen">⛶ Full screen</button>
+
+        <div class="seek-group">
+
+          <span class="hint">Jump to</span>
+
+          <input type="text" id="input-seek-video" placeholder="1:23">
+
+          <button class="btn btn-ghost btn-sm" id="btn-seek-video">Go</button>
+
+        </div>
+
+      </div>
+
+      <p class="hint">Synced to the whole room automatically. This mode is voice-only — the chat panel is reserved for Music, so everyone stays focused on the screen.</p>
+
     </div>
+
+
+
+    <!-- MUSIC -->
+
+    <div class="pane" id="pane-music">
+
+      <div class="music-card">
+
+        <div class="vinyl" id="vinyl"></div>
+
+        <div class="music-meta">
+
+          <div class="label">Now playing, together</div>
+
+          <h3 id="music-title">Nothing queued yet</h3>
+
+          <div class="bars" id="music-bars"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+        </div>
+
+        <div class="music-yt" id="yt-player-music"></div>
+
+      </div>
+
+
+
+      <div class="load-row">
+
+        <input type="text" id="input-music-url" placeholder="Paste a YouTube or Spotify link…">
+
+        <button class="btn btn-violet" id="btn-load-music">Play</button>
+
+        <button class="btn btn-ghost" id="btn-save-music" title="Save to your playlist">⭐</button>
+
+      </div>
+
+      <div class="controls-row" id="music-sync-controls">
+
+        <button class="btn btn-ghost btn-sm" id="btn-play-music">▶ Play</button>
+
+        <button class="btn btn-ghost btn-sm" id="btn-pause-music">⏸ Pause</button>
+
+        <button class="btn btn-ghost btn-sm" id="btn-sync-music">🔄 Sync everyone to me</button>
+
+        <div class="seek-group">
+
+          <span class="hint">Jump to</span>
+
+          <input type="text" id="input-seek-music" placeholder="1:23">
+
+          <button class="btn btn-ghost btn-sm" id="btn-seek-music">Go</button>
+
+        </div>
+
+      </div>
+
+
+
+      <div class="divider-or">or</div>
+
+
+
+      <div class="local-audio-row">
+
+        <input type="file" id="input-local-file" accept="audio/*" style="display:none;">
+
+        <button class="btn btn-ghost btn-sm" id="btn-pick-local">📂 Play a file from your device</button>
+
+        <span class="hint">Local files only play for you — for a synced group listen, paste a link above.</span>
+
+      </div>
+
+      <audio id="local-audio-player" controls style="width:100%; display:none;"></audio>
+
+
+
+      <p class="hint">Same sync engine as the video room. Chat's open here — type freely, or mention <b>@ai</b> for a joke or a recommendation.</p>
+
+    </div>
+
+
+
+    <!-- GAMES -->
+
+    <div class="pane" id="pane-games">
+
+      <div id="games-picker">
+
+        <h3 class="games-heading">Pick a category</h3>
+
+        <div class="category-grid" id="category-grid"></div>
+
+      </div>
+
+
+
+      <div id="category-detail" style="display:none;">
+
+        <button class="back-link" id="btn-back-categories">← Categories</button>
+
+        <h3 class="games-heading" id="category-detail-title"></h3>
+
+        <div class="game-grid" id="category-game-grid"></div>
+
+      </div>
+
+
+
+      <div class="game-panel" id="game-trivia" style="display:none;">
+
+        <button class="back-link" data-back-game>← Games</button>
+
+        <div id="trivia-body">
+
+          <p class="hint">Everyone answers, then it reveals after 10 seconds.</p>
+
+          <button class="btn btn-primary" id="btn-trivia-start">Start Trivia</button>
+
+        </div>
+
+      </div>
+
+
+
+      <div class="game-panel" id="game-wyr" style="display:none;">
+
+        <button class="back-link" data-back-game>← Games</button>
+
+        <div id="wyr-body">
+
+          <p class="hint">Pick a side and watch how the room votes, live.</p>
+
+          <button class="btn btn-violet" id="btn-wyr-start">Start</button>
+
+        </div>
+
+      </div>
+
+
+
+      <div class="game-panel" id="game-ttt" style="display:none;">
+
+        <button class="back-link" data-back-game>← Games</button>
+
+        <div id="ttt-body">
+
+          <p class="hint">Pick someone in the room to challenge.</p>
+
+          <div class="ttt-opponents" id="ttt-opponent-list"></div>
+
+        </div>
+
+      </div>
+
+
+
+      <div class="game-panel" id="game-tot" style="display:none;">
+
+        <button class="back-link" data-back-game>← Games</button>
+
+        <div id="tot-body">
+
+          <p class="hint">Pick a side and watch how the room votes, live.</p>
+
+          <button class="btn btn-violet" id="btn-tot-start">Start</button>
+
+        </div>
+
+      </div>
+
+
+
+      <div class="game-panel" id="game-woa" style="display:none;">
+
+        <button class="back-link" data-back-game>← Games</button>
+
+        <div id="woa-body">
+
+          <p class="hint">Everyone answers the prompt on purpose wrong — funniest answer wins the room's laugh.</p>
+
+          <button class="btn btn-primary" id="btn-woa-start">Start round</button>
+
+        </div>
+
+      </div>
+
+    </div>
+
+
+
   </div>
+
+
+
+  <div class="side-col">
+
+    <div class="constellation">
+
+      <h4 id="participant-count">In the room</h4>
+
+      <div class="orbit" id="orbit"></div>
+
+      <div class="mic-row">
+
+        <button class="btn btn-secondary btn-sm" id="btn-mic" style="flex:1;">🎤 Join voice</button>
+
+      </div>
+
+      <div id="chat-toggle-wrap">
+
+        <button class="btn btn-ghost btn-sm btn-block" id="btn-chat-toggle">💬 Open chat</button>
+
+      </div>
+
+    </div>
+
+    <div class="chat-col" id="chat-col">
+
+      <div class="chat-log" id="chat-log"></div>
+
+      <p class="chat-hint">Tip: mention <b>@ai</b> for a joke, a movie pick, or a song pick.</p>
+
+      <div class="chat-input-row">
+
+        <input type="text" id="input-chat" placeholder="Say something…" maxlength="500">
+
+        <button class="btn btn-primary" id="btn-send">Send</button>
+
+      </div>
+
+    </div>
+
+  </div>
+
 </div>
 
-<!-- ================= SETTINGS ================= -->
-<div id="settings-overlay">
-  <div class="settings-modal">
-    <h2>Settings</h2>
+  </div></div><!-- ================= SETTINGS ================= --><div id="settings-overlay">  <div class="settings-modal"><h2>Settings</h2>
 
-    <div class="settings-row">
-      <div class="lbl">Your name</div>
-    </div>
-    <div class="field" style="margin:6px 0 14px;"><input type="text" id="input-rename" maxlength="20"></div>
-    <button class="btn btn-ghost btn-block btn-sm" id="btn-rename-save" style="margin-bottom:6px;">Save name</button>
+
 
 <div class="settings-row">
-  <div><div class="lbl">Account</div><div class="desc" id="settings-account-desc">—</div></div>
-</div>
-<button class="btn btn-ghost btn-block btn-sm" id="btn-settings-logout" style="margin-bottom:6px;">Log out</button>
 
-    <div class="settings-row" style="margin-top:6px;">
-      <div><div class="lbl">Microphone</div><div class="desc">Choose which mic to use for voice</div></div>
-    </div>
-    <select id="select-mic" style="margin:6px 0 4px;"></select>
+  <div class="lbl">Your name</div>
 
-    <div class="settings-row">
-      <div><div class="lbl">Chat sound</div><div class="desc">Play a sound for new messages</div></div>
-      <div class="toggle on" id="toggle-sound"></div>
-    </div>
-    <div class="settings-row">
-      <div><div class="lbl">Auto-sync</div><div class="desc">Automatically correct drift for video &amp; music</div></div>
-      <div class="toggle on" id="toggle-autosync"></div>
-    </div>
-
-    <div class="settings-roadmap">
-      ✅ Accounts, playlists, and the AI buddy now run on Supabase (once you've run the one-time setup — see supabase/README.md). 🚧 Spotify still needs a Premium account to test real playback across rooms.
-    </div>
-
-    <div class="settings-about"><b>Together</b> — made by <b>Taiki Ryuzaki</b><br>watch, listen, and play with the people you miss.</div>
-    <button class="btn btn-primary btn-block settings-close" id="btn-settings-close">Done</button>
-  </div>
 </div>
 
-<div id="toast-container"></div>
+<div class="field" style="margin:6px 0 14px;"><input type="text" id="input-rename" maxlength="20"></div>
 
-<!-- External libraries (no dependencies) -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js"></script>
+<button class="btn btn-ghost btn-block btn-sm" id="btn-rename-save" style="margin-bottom:6px;">Save name</button>
 
-<!-- Config & init (must load first, before anything else) -->
-<script src="config.js"></script>
-<script src="supabase-client.js"></script>
+<div class="settings-row">  <div><div class="lbl">Account</div><div class="desc" id="settings-account-desc">—</div></div></div><button class="btn btn-ghost btn-block btn-sm" id="btn-settings-logout" style="margin-bottom:6px;">Log out</button>
 
-<!-- Feature modules (depends on config) -->
-<script src="peer-manager.js"></script>
-<script src="rooms.js"></script>
-<script src="youtube-sync.js"></script>
-<script src="music-player.js"></script>
-<script src="playlists.js"></script>
-<script src="games.js"></script>
+<div class="settings-row" style="margin-top:6px;">
 
-<!-- Main app (depends on all modules above) -->
-<script src="app.js"></script>
-</body>
-</html>
+  <div><div class="lbl">Microphone</div><div class="desc">Choose which mic to use for voice</div></div>
+
+</div>
+
+<select id="select-mic" style="margin:6px 0 4px;"></select>
+
+
+
+<div class="settings-row">
+
+  <div><div class="lbl">Chat sound</div><div class="desc">Play a sound for new messages</div></div>
+
+  <div class="toggle on" id="toggle-sound"></div>
+
+</div>
+
+<div class="settings-row">
+
+  <div><div class="lbl">Auto-sync</div><div class="desc">Automatically correct drift for video &amp; music</div></div>
+
+  <div class="toggle on" id="toggle-autosync"></div>
+
+</div>
+
+
+
+<div class="settings-roadmap">
+
+  ✅ Accounts, playlists, and the AI buddy now run on Supabase (once you've run the one-time setup — see supabase/README.md). 🚧 Spotify still needs a Premium account to test real playback across rooms.
+
+</div>
+
+
+
+<div class="settings-about"><b>Together</b> — made by <b>Taiki Ryuzaki</b><br>watch, listen, and play with the people you miss.</div>
+
+<button class="btn btn-primary btn-block settings-close" id="btn-settings-close">Done</button>
+
+  </div></div><div id="toast-container"></div><!-- External libraries (no dependencies) --><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js"></script><!-- Config & init (must load first, before anything else) --><script src="config.js"></script><script src="supabase-client.js"></script><!-- Feature modules (depends on config) --><script src="peer-manager.js"></script><script src="rooms.js"></script><script src="youtube-sync.js"></script><script src="music-player.js"></script><script src="playlists.js"></script><script src="games.js"></script><!-- Main app (depends on all modules above) --><script src="app.js"></script>
+  </body>
+  </html>

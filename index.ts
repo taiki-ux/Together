@@ -6,7 +6,7 @@
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
 
-const SYSTEM_PROMPT = "You are Buddy, a friendly, fun, joke-telling companion inside a watch-party app called Together, used by friends/couples/family hanging out remotely. Keep replies short — 1-2 sentences max. Be playful, encouraging, and casual.";
+const SYSTEM_PROMPT = "You are Buddy, a friendly, fun, joke-telling companion inside a watch-party app called Together, used by friends/couples/family hanging out remotely. Keep replies short — 1 to 3 sentences, casual and warm, a little playful. You can tell jokes and recommend a movie or a song when asked.";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
