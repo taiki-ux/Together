@@ -16,6 +16,8 @@ function toast(msg){
   setTimeout(()=> el.remove(), 3000);
 }
 
+function shortCode(code){ return code.length > 6 ? code.slice(0,3) + '…' : code; }
+
 function toastSuccess(msg) {
   const container = document.getElementById('toast-container');
   if (!container) return;
@@ -132,13 +134,14 @@ window.onConnectionStatus = function(state){
               else if (state === 'reconnecting'){ pill.textContent = '🟡'; pill.title = 'Reconnecting…'; toast('Connection dropped — reconnecting…', 'err'); }
                  else if (state === 'offline'){ pill.textContent = '🔴'; pill.title = 'Disconnected'; toast("You've been disconnected. Try rejoining the room.", 'err'); }
                  };
-                 
+
 // ---------- Entry gate (choice-only) ----------
 window.onPeerReady = function(){
   document.getElementById('screen-landing').style.display='none';
   document.getElementById('screen-room').style.display='block';
   document.getElementById('entry-hub').style.display='flex';
-  document.getElementById('entry-room-code').textContent = roomCode;
+  window.scrollTo(0,0);
+  document.getElementById('entry-room-code').textContent = shortCode(roomCode);
   document.getElementById('input-rename').value = myName;
   addSystemMessage(isHost ? `Room created. Share the code "${roomCode}" with your friends.` : `You joined "${roomCode}".`);
 };
@@ -198,6 +201,7 @@ function enterActivity(mode, broadcastIt){
   
   document.getElementById('entry-hub').style.display='none';
   document.getElementById('activity-shell').style.display='flex';
+  window.scrollTo(0,0);
   document.getElementById('room-code-display').textContent = roomCode;
   setMode(mode, broadcastIt);
   

@@ -421,27 +421,21 @@ label{
 
 /* ================= ROOM: ENTRY GATE (choice-only) ================= */
 #entry-hub{
-  display:none; min-height:100vh; flex-direction:column; align-items:center; 
-  justify-content:center; text-align:center; padding:24px; position:relative;
+  display:none; min-height:100vh; flex-direction:column; align-items:center;
+  text-align:center; position:relative;
 }
 
-.entry-topline{ 
-  position:absolute; top:20px; left:0; right:0; display:flex; 
-  justify-content:space-between; align-items:center; padding:0 22px;
+.entry-topline{
+  position:sticky; top:0; z-index:20; width:100%; box-sizing:border-box;
+  background:rgba(19,24,41,0.85); backdrop-filter:blur(8px); border-bottom:1px solid var(--line);
+  display:flex; justify-content:space-between; align-items:center; padding:14px 22px; flex-wrap:wrap; gap:10px;
 }
 
-#entry-hub h2{ 
-  font-size:28px; font-style:italic; margin:0 0 4px;
-}
+#entry-hub h2{ font-size:24px; font-style:italic; margin:28px 0 4px; }
+#entry-hub p.sub{ color:var(--text-muted); margin:0 0 20px; font-size:14px; }
 
-#entry-hub p.sub{ 
-  color:var(--text-muted); margin:0 0 30px; font-size:14px;
-}
 
-.hub-grid{ 
-  display:grid; grid-template-columns:repeat(3,1fr); gap:18px; 
-  width:100%; max-width:640px;
-}
+.hub-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:18px; width:100%; max-width:640px; padding:0 24px 24px; }
 
 @media (max-width:560px){ 
   .hub-grid{grid-template-columns:1fr;} 
