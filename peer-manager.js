@@ -65,11 +65,12 @@ function getSavedSession(){
 // ---------- PeerJS plumbing (discovery now via Supabase Realtime presence — see joinRoomPresence) ----------
 function initPeer(){
    peer = new Peer({debug:0}); // always a random id; roomCode is just the Supabase channel name now
-   
+
    peer.on('open', id=>{
       myId = id;
       participants[myId] = {name: myName};
       saveSession();
+      if (window.onConnectionStatus) window.onConnectionStatus('connected');
       if (requireApproval){
          beginKnock();
       } else {
@@ -83,16 +84,29 @@ function initPeer(){
       call.answer(localStream || undefined);
       setupMediaConn(call);
    });
+   peer.on('disconnected', ()=>{
+      // Lost the signaling connection (not the same as the data/voice links to
+      // other people, which keep working) — try to quietly reconnect.
+      if (window.onConnectionStatus) window.onConnectionStatus('reconnecting');
+      setTimeout(()=>{ try{ if (peer && !peer.destroyed) peer.reconnect(); }catch(e){ console.warn('Reconnect failed:', e); } }, 1000);
+   });
+   peer.on('close', ()=>{
+      if (window.onConnectionStatus) window.onConnectionStatus('offline');
+   });
    peer.on('error', err=>{
       console.error('Peer error:', err);
+      if (err && err.type === 'network' && window.onConnectionStatus) window.onConnectionStatus('reconnecting');
       if (window.onPeerError)
          window.onPeerError(String(err.type||err));
    });
-}  // ---------- Knock-to-enter (typed-code joins only) ----------
+}  
+
+// ---------- Knock-to-enter (typed-code joins only) ----------
 // A knocker subscribes to the room's channel WITHOUT tracking presence (so 
 // they aren't "in" the room yet), broadcasts a request, and waits for any
 // current member to accept or deny. Approval upgrades them to a full,
 // presence-tracked member via the normal joinRoomPresence() path.
+
 function beginKnock(){
    if (window.onKnockWaiting) window.onKnockWaiting();
    roomChannel = supabaseClient.channel(`room:${roomCode}`);

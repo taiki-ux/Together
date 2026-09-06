@@ -125,6 +125,14 @@ function setLandingLoading(loading){
 }
 window.onPeerError = (msg)=>{ setLandingLoading(false); showLandingStatus(msg, true); };
 
+window.onConnectionStatus = function(state){
+     const pill = document.getElementById('conn-status');
+        if (!pill) return;
+           if (state === 'connected'){ pill.textContent = '🟢'; pill.title = 'Connected'; }
+              else if (state === 'reconnecting'){ pill.textContent = '🟡'; pill.title = 'Reconnecting…'; toast('Connection dropped — reconnecting…', 'err'); }
+                 else if (state === 'offline'){ pill.textContent = '🔴'; pill.title = 'Disconnected'; toast("You've been disconnected. Try rejoining the room.", 'err'); }
+                 };
+                 
 // ---------- Entry gate (choice-only) ----------
 window.onPeerReady = function(){
   document.getElementById('screen-landing').style.display='none';
@@ -207,15 +215,8 @@ function setMode(mode, broadcastIt){
   document.getElementById('pane-'+mode).classList.add('active');
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active', b.dataset.mode===mode));
 
-  const chatToggleWrap = document.getElementById('chat-toggle-wrap');
-  const chatCol = document.getElementById('chat-col');
-  if (mode === 'music'){
-    chatToggleWrap.classList.add('visible');
-  } else {
-    chatToggleWrap.classList.remove('visible');
-    chatCol.classList.remove('open');
-    setChatToggleLabel(false);
-  }
+  // Chat is now available from every mode, not just Music.
+  document.getElementById('chat-toggle-wrap').classList.add('visible');
   if (broadcastIt) broadcast({type:'mode', mode});
 }
 window.onRemoteMode = (mode)=> setMode(mode, false);
@@ -497,26 +498,6 @@ document.querySelectorAll('.auth-tab').forEach(btn => {
     document.getElementById('auth-status').textContent = '';
   });
 });
-
-// Settings panel signin/signup (different from auth screen)
-document.getElementById('btn-signin').addEventListener('click', async function(e){
-  const email = document.getElementById('input-email').value.trim();
-  const password = document.getElementById('input-password').value;
-  if (!email || !password){ showAccountStatus('Enter an email and password.', true); return; }
-  showAccountStatus('Logging in…');
-  const { error } = await signInWithEmail(email, password);
-  if (error) showAccountStatus(error.message, true); else toast('Logged in');
-});
-
-document.getElementById('btn-signout').addEventListener('click', async ()=>{
-  await signOutUser();
-  toast('Logged out');
-});
-
-function showAccountStatus(msg, isErr){
-  const el = document.getElementById('account-status');
-  el.textContent = msg; el.style.color = isErr ? 'var(--coral)' : 'var(--text-muted)';
-}
 
 // ---------- Save to playlist ----------
 document.getElementById('btn-save-video').addEventListener('click', ()=>{
