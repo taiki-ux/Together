@@ -37,8 +37,3 @@ Say the word if you want that added.
 Push this whole folder to a GitHub repo → **Settings → Pages** → deploy from the `main`
 branch. That's your entire frontend, live and free. Supabase (already set up above) is
 your entire backend — no separate server to run or pay for.
-
-
-
-
-AIzaSyBJ413biFEFK4uHJAmi1aqsJED8vWfMJoQ
