@@ -202,7 +202,7 @@ function enterActivity(mode, broadcastIt){
   document.getElementById('entry-hub').style.display='none';
   document.getElementById('activity-shell').style.display='flex';
   window.scrollTo(0,0);
-  document.getElementById('room-code-display').textContent = roomCode;
+  document.getElementById('room-code-display').textContent = shortCode(roomCode);
   setMode(mode, broadcastIt);
   
   isEnteringActivity = false;

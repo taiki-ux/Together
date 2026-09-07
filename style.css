@@ -490,7 +490,7 @@ label{
 
 /* ================= ROOM: ACTIVITY SHELL ================= */
 #activity-shell{
-  display:none; min-height:100vh; flex-direction:column;
+  display:sticky; min-height:100vh; flex-direction:column;
 }
 
 .topbar{

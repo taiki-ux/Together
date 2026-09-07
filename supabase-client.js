@@ -12,20 +12,20 @@ try {
   supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   window.supabaseClient = supabaseClient;
 
-  const { data: authListener } = supabaseClient.auth.onAuthStateChange((event, session) => {
-    if (event === 'SIGNED_OUT') {
-      currentUser = null;
-      myProfile = null;
-      if (typeof window.onSignedOut === 'function') window.onSignedOut();
-      return;
-    }
-
-    currentUser = session?.user ?? null;
-    if (currentUser) {
-      loadMyProfile().catch((err) => console.error('Failed to load profile after auth change:', err));
-    }
-    if (typeof window.onAuthChange === 'function') window.onAuthChange(currentUser);
-  });
+const { data: authListener } = supabaseClient.auth.onAuthStateChange(async (event, session) => {
+  if (event === 'SIGNED_OUT') {
+    currentUser = null;
+    myProfile = null;
+    if (typeof window.onSignedOut === 'function') window.onSignedOut();
+    return;
+  }
+  currentUser = session?.user ?? null;
+  if (currentUser) {
+    try{ await loadMyProfile(); }
+    catch(err){ console.error('Failed to load profile after auth change:', err); }
+  }
+  if (typeof window.onAuthChange === 'function') window.onAuthChange(currentUser);
+});
 } catch (e) {
   console.error('Supabase failed to initialize:', e);
 }
