@@ -16,6 +16,13 @@ function toast(msg){
   setTimeout(()=> el.remove(), 3000);
 }
 
+function withTimeout(promise, ms, message){
+  return Promise.race([
+    promise,
+    new Promise((_, reject)=> setTimeout(()=> reject(new Error(message)), ms))
+  ]);
+}
+
 function shortCode(code){ return code.length > 6 ? code.slice(0,3) + '…' : code; }
 
 function toastSuccess(msg) {
@@ -427,7 +434,11 @@ document.getElementById('btn-settings-logout').addEventListener('click', async (
   location.reload();
 });
 window.onAuthChange = function(user){
-  if (!user && document.getElementById('screen-room').style.display !== 'none') location.reload();
+  if (user){
+    if (document.getElementById('screen-auth').style.display !== 'none') enterAppAsUser();
+  } else if (document.getElementById('screen-room').style.display !== 'none'){
+    location.reload();
+  }
 };
 
 function refreshAccountPanel(user){
@@ -473,13 +484,18 @@ document.getElementById('btn-signup').addEventListener('click', async function(e
 
 // Auth screen - Log in
 document.getElementById('btn-login').addEventListener('click', async function(e){
-  e.preventDefault();
-  const email = document.getElementById('login-email').value.trim();
-  const password = document.getElementById('login-password').value;
-  if (!email || !password){ showAuthStatus('Enter an email and password.', true); return; }
-  showAuthStatus('Logging in…');
-  const { error } = await signInWithEmail(email, password);
-  if (error) showAuthStatus(error.message, true); 
+     e.preventDefault();
+     const email = document.getElementById('login-email').value.trim();
+     const password = document.getElementById('login-password').value;
+     if (!email || !password){ showAuthStatus('Enter an email and password.', true); return; }
+     showAuthStatus('Logging in…');
+     try{
+           const { error } = await withTimeout(signInWithEmail(email, password), 15000, "That's taking too long — check your connection and try again.");
+           if (error) showAuthStatus(error.message, true);
+           // success case: window.onAuthChange fires and calls enterAppAsUser() itself
+     }catch(err){
+           showAuthStatus(err.message || 'Something went wrong logging in.', true);
+    }
 });
 
 function showAuthStatus(msg, isErr){

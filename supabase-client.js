@@ -9,22 +9,40 @@ let myProfile = null; // {id, first_name, last_name, username}
 
 try {
   if (!window?.supabase) throw new Error('window.supabase is not available');
-  supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+function createSafeStorage(){
+  try{
+    const testKey = '__together_storage_test__';
+    window.localStorage.setItem(testKey, '1');
+    window.localStorage.removeItem(testKey);
+    return window.localStorage;
+  }catch(e){
+    console.warn('localStorage is blocked (tracking prevention?) — sessions will only last this tab, you\'ll need to log in again after closing it.');
+    const mem = {};
+    return {
+      getItem: (k)=> (k in mem ? mem[k] : null),
+      setItem: (k,v)=> { mem[k]=v; },
+      removeItem: (k)=> { delete mem[k]; }
+    };
+  }
+}
+supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: { storage: createSafeStorage(), persistSession: true, autoRefreshToken: true }
+});
   window.supabaseClient = supabaseClient;
 
 const { data: authListener } = supabaseClient.auth.onAuthStateChange(async (event, session) => {
-  if (event === 'SIGNED_OUT') {
-    currentUser = null;
-    myProfile = null;
-    if (typeof window.onSignedOut === 'function') window.onSignedOut();
-    return;
-  }
-  currentUser = session?.user ?? null;
-  if (currentUser) {
-    try{ await loadMyProfile(); }
-    catch(err){ console.error('Failed to load profile after auth change:', err); }
-  }
-  if (typeof window.onAuthChange === 'function') window.onAuthChange(currentUser);
+     if (event === 'SIGNED_OUT') {
+          currentUser = null;
+          myProfile = null;
+          if (typeof window.onSignedOut === 'function') window.onSignedOut();
+          return;
+}   
+currentUser = session?.user ?? null;   
+if (currentUser) {
+       try{ await loadMyProfile(); }
+        catch(err){ console.error('Failed to load profile after auth change:', err); }
+         }
+if (typeof window.onAuthChange === 'function') window.onAuthChange(currentUser); 
 });
 } catch (e) {
   console.error('Supabase failed to initialize:', e);
