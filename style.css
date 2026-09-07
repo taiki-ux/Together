@@ -421,8 +421,8 @@ label{
 
 /* ================= ROOM: ENTRY GATE (choice-only) ================= */
 #entry-hub{
-  display:none; min-height:100vh; flex-direction:column; align-items:center;
-  text-align:center; position:relative;
+  display:none; flex-direction:column; align-items:center;
+  text-align:center; position:relative; padding: 30px;
 }
 
 .entry-topline{
@@ -518,7 +518,7 @@ label{
 
 .mode-nav{ 
   display:flex; gap:6px; background:var(--bg-panel-2); border:1px solid var(--line); 
-  border-radius:999px; padding:4px; margin:0 auto;
+  border-radius:999px; padding:4px; margin:0 ;
   box-shadow: 0 8px 24px rgba(0,0,0,0.3);
 }
 
