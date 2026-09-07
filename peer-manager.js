@@ -296,8 +296,7 @@ function attachSpeakingDetector(stream, key){
       const speaking = (sum/buf.length) > 14;
       if (speakingState[key]!==speaking){
         speakingState[key]=speaking;
-        const el = document.querySelector(`.avatar[data-peer="${key}"]`);
-        if (el) el.classList.toggle('speaking', speaking);
+        document.querySelectorAll(`.avatar[data-peer="${key}"]`).forEach(el=> el.classList.toggle('speaking', speaking));
       }
       requestAnimationFrame(tick);
     })();

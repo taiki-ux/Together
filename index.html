@@ -153,8 +153,9 @@
         <button class="nav-btn" data-mode="video">🎬 Watch</button>
         <button class="nav-btn" data-mode="music">🎵 Music</button>
         <button class="nav-btn" data-mode="games">🎮 Play</button>
-        <button calss="nav-btn" data-mode="chat">🗨️ Chat</button>
-        <button calss="nav-btn" data-mode="talk">📞 Talk</button>
+        <button class="nav-btn" data-mode="chat">🗨️ Chat</button>
+        <button class="nav-btn" data-mode="talk">📞 Talk</button>
+        <button class="nav-btn" data-mode="playlist">⭐ Playlist</button>
       </div>
       <div class="topbar-right">
         <div class="roomcode-pill">
@@ -293,6 +294,34 @@
             </div>
           </div>
         </div>
+        
+        <!-- CHAT (full page) -->
+        <div class="pane" id="pane-chat">
+          <h3 class="games-heading">💬 Chat</h3>
+          <p class="hint">Everyone in the room, all in one place.</p>
+          <div id="chat-page-mount" class="chat-page-mount"></div>
+        </div>
+
+        <!-- TALK (voice-focused view) -->
+        <div class="pane" id="pane-talk">
+          <h3 class="games-heading">🎙 Talk</h3>
+          <p class="hint">Voice works from any page — this is just the focused view.</p>
+          <div class="talk-grid" id="talk-grid"></div>
+          <button class="talk-mic-btn" id="btn-mic-talk" type="button">🎤 Join voice</button>
+        </div>
+
+        <!-- PLAYLIST -->
+        <div class="pane" id="pane-playlist">
+          <h3 class="games-heading">⭐ Your playlists</h3>
+          <div class="playlist-section">
+            <h4>🎬 Videos</h4>
+            <div id="playlist-video-list" class="playlist-list"></div>
+          </div>
+          <div class="playlist-section">
+            <h4>🎵 Music</h4>
+            <div id="playlist-music-list" class="playlist-list"></div>
+          </div>
+        </div>        
 
       </div>
 
@@ -304,18 +333,20 @@
             <button class="btn btn-secondary btn-sm" id="btn-mic" style="flex:1;">🎤 Join voice</button>
           </div>
           <div id="chat-toggle-wrap">
-            <button class="btn btn-ghost btn-sm btn-block" id="btn-chat-toggle">💬 Open chat</button>
+                <button class="btn btn-ghost btn-sm btn-block" id="btn-chat-toggle">💬 Open chat</button>
+              </div>
+            </div>
+            <div id="chat-sidebar-mount">
+              <div class="chat-col" id="chat-col">
+                <div class="chat-log" id="chat-log"></div>
+                 <p class="chat-hint">Tip: mention <b>@ai</b> for a joke, a movie pick, or a song pick.</p>
+                <div class="chat-input-row">
+                  <input type="text" id="input-chat" placeholder="Say something…" maxlength="500">
+                  <button class="btn btn-primary" id="btn-send">Send</button>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
-        <div class="chat-col" id="chat-col">
-          <div class="chat-log" id="chat-log"></div>
-          <p class="chat-hint">Tip: mention <b>@ai</b> for a joke, a movie pick, or a song pick.</p>
-          <div class="chat-input-row">
-            <input type="text" id="input-chat" placeholder="Say something…" maxlength="500">
-            <button class="btn btn-primary" id="btn-send">Send</button>
-          </div>
-        </div>
-      </div>
     </div>
   </div>
 </div>

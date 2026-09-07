@@ -215,21 +215,105 @@ function enterActivity(mode, broadcastIt){
   isEnteringActivity = false;
 }
 
-function setMode(mode, broadcastIt){
-  currentMode = mode;
-  const shell = document.getElementById('activity-shell');
-  if (shell && shell.style.display !== 'flex' && !isEnteringActivity) {
-    enterActivity(mode, false);
-    return;
-  }
-  document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
-  document.getElementById('pane-'+mode).classList.add('active');
-  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active', b.dataset.mode===mode));
+const SHARED_MODES = ['video','music','games']; 
 
-  // Chat is now available from every mode, not just Music.
-  document.getElementById('chat-toggle-wrap').classList.add('visible');
-  if (broadcastIt) broadcast({type:'mode', mode});
+function mountChatInSidebar(){
+     const mount = document.getElementById('chat-sidebar-mount');
+     if (mount) mount.appendChild(document.getElementById('chat-col'));
 }
+function mountChatInPage(){
+     const mount = document.getElementById('chat-page-mount');
+     if (mount) mount.appendChild(document.getElementById('chat-col')); 
+}
+function setMode(mode, broadcastIt){
+     const shell = document.getElementById('activity-shell');
+     if (shell && shell.style.display !== 'flex' && !isEnteringActivity) {
+         enterActivity(mode, broadcastIt);
+         return;
+}   
+// currentMode only tracks the room's shared activity (Watch/Music/Games) —   
+// Chat/Talk/Playlist are personal views layered on top and never broadcast,   
+// so navigating to them never interrupts what everyone else is doing.   i
+if (SHARED_MODES.includes(mode)) currentMode = mode;    
+
+document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));   
+const pane = document.getElementById('pane-'+mode);   
+if (pane) pane.classList.add('active');
+document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active', b.dataset.mode===mode));    
+
+if (mode === 'chat'){
+     mountChatInPage();
+     document.getElementById('chat-col').classList.add('open');
+     document.getElementById('chat-toggle-wrap').classList.remove('visible');   
+} else {
+       mountChatInSidebar();
+       document.getElementById('chat-toggle-wrap').classList.add('visible');   
+}
+if (mode === 'playlist') renderPlaylistPane();   
+if (mode === 'talk') renderTalkGrid();    
+
+if (broadcastIt && SHARED_MODES.includes(mode)) broadcast({type:'mode', mode}); 
+}
+
+async function renderPlaylistPane(){
+  await renderPlaylistList('video', 'playlist-video-list');
+  await renderPlaylistList('music', 'playlist-music-list');
+}
+async function renderPlaylistList(kind, containerId){
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  el.innerHTML = '<p class="hint">Loading…</p>';
+  let items = [];
+  try{ items = await loadFavorites(kind); }
+  catch(e){ console.error('Failed to load favorites:', e); el.innerHTML = '<p class="hint">Couldn\'t load these right now.</p>'; return; }
+
+  if (!items || items.length === 0){ el.innerHTML = '<p class="hint">Nothing saved yet — hit ⭐ next to Load.</p>'; return; }
+
+  el.innerHTML = items.map(it => `
+    <div class="playlist-item">
+      <span title="${escapeHtml(it.title)}">${escapeHtml(it.title)}</span>
+      <span class="playlist-actions">
+        <button class="btn btn-secondary btn-sm" data-load="${it.video_id}" data-kind="${kind}" type="button">▶ Play</button>
+        <button class="icon-btn" data-remove="${it.id}" data-kind="${kind}" type="button" title="Remove">🗑</button>
+      </span>
+    </div>
+  `).join('');
+
+  el.querySelectorAll('[data-load]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      YTSync.load(btn.dataset.kind, btn.dataset.load);
+      setMode(btn.dataset.kind, true); // jump everyone to Watch/Music so they can see/hear it
+    });
+  });
+  el.querySelectorAll('[data-remove]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      try{ await deleteFavorite(btn.dataset.remove); }
+      catch(e){ console.error('Failed to remove favorite:', e); toast("Couldn't remove that item", 'err'); return; }
+      renderPlaylistList(btn.dataset.kind, containerId);
+    });
+  });
+}
+
+function renderTalkGrid(){
+   const grid = document.getElementById('talk-grid'); 
+   if (!grid) return;   
+   grid.innerHTML = '';   
+   Object.keys(participants).forEach(id=>{ 
+     const p = participants[id];  
+     const tile = document.createElement('div'); tile.className = 'talk-tile';     
+     const av = document.createElement('div'); av.className = 'avatar talk-avatar'; av.dataset.peer = id;     
+     av.style.background = nameColor(p.name || '?'); av.textContent = initials(p.name);     
+     if (speakingState[id]) av.classList.add('speaking');     
+     tile.appendChild(av);     
+     const nm = document.createElement('div'); nm.className = 'talk-name'; nm.textContent = (id === myId ? 'You' : p.name);     
+     tile.appendChild(nm);     
+     const micState = document.createElement('div'); micState.className = 'talk-mic-state';     
+     micState.textContent = p.muted === false ? '🎤 On' : '🔇 Off';     
+     tile.appendChild(micState);     
+     grid.appendChild(tile);
+   }); 
+}
+window.onOrbitRender = (function(prev){ return function(){ if (prev) prev(); renderTalkGrid(); }; })(window.onOrbitRender);
 window.onRemoteMode = (mode)=> setMode(mode, false);
 document.querySelectorAll('.nav-btn').forEach(b=> b.addEventListener('click', ()=>setMode(b.dataset.mode, true)));
 
@@ -293,26 +377,46 @@ document.getElementById('input-local-file').addEventListener('change', function(
   if (this.files && this.files[0]) musicPlayLocalFile(this.files[0]);
 });
 
-document.getElementById('btn-mic').addEventListener('click', async ()=>{
-  const btn = document.getElementById('btn-mic');
-  if (!micOn){
-    try{
-      if (!localStream){ localStream = await acquireMicStream(); attachSpeakingDetector(localStream, myId); }
-      localStream.getAudioTracks().forEach(t=>t.enabled=true);
-      micOn = true;
-      btn.textContent = '🔇 Leave voice'; btn.classList.remove('btn-secondary'); btn.classList.add('btn-ghost');
-      const peerIds = Object.keys(dataConns);
-      for (const id of peerIds) maybeCallPeer(id);
-      broadcast({type:'mic', muted:false});
-    }catch(e){ alert("Couldn't access your microphone. Check your browser's permission settings."); }
-  } else {
-    micOn = false;
-    if (localStream) localStream.getAudioTracks().forEach(t=>t.enabled=false);
-    btn.textContent = '🎤 Join voice'; btn.classList.add('btn-secondary'); btn.classList.remove('btn-ghost');
-    broadcast({type:'mic', muted:true});
-  }
-});
+async function toggleMic(){
+     if (!micOn){
+         try{
+            if (!localStream){ localStream = await acquireMicStream(); attachSpeakingDetector(localStream, myId); }
+            localStream.getAudioTracks().forEach(t=> t.enabled = true);
+            micOn = true;
+            updateMicButtonsUI(true);
+            Object.keys(dataConns).forEach(id=> maybeCallPeer(id));
+            broadcast({ type:'mic', muted:false });
+           }catch(e){
+            console.error('Mic access failed:', e);
+            const reason = e.name === 'NotAllowedError' ? 'Microphone permission was denied.'
+                 : e.name === 'NotFoundError' ? 'No microphone was found on this device.'
+                 : `Couldn't access your microphone (${e.message || e.name || 'unknown error'}).`;
+            toast(reason, 'err');
+           }
+       } else {
+         micOn = false;
+         if (localStream) localStream.getAudioTracks().forEach(t=> t.enabled = false);
+         updateMicButtonsUI(false);
+         broadcast({ type:'mic', muted:true });
+       }
+} 
 
+function updateMicButtonsUI(on){
+     const sidebarBtn = document.getElementById('btn-mic');
+     if (sidebarBtn){
+           sidebarBtn.textContent = on ? '🔇 Leave voice' : '🎤 Join voice';
+           sidebarBtn.classList.toggle('btn-secondary', !on);
+           sidebarBtn.classList.toggle('btn-ghost', on);
+      }
+     const talkBtn = document.getElementById('btn-mic-talk');
+     if (talkBtn){
+           talkBtn.textContent = on ? '🔇 Leave voice' : '🎤 Join voice';
+           talkBtn.classList.toggle('on', on);
+      } 
+} 
+
+document.getElementById('btn-mic').addEventListener('click', toggleMic);
+document.getElementById('btn-mic-talk').addEventListener('click', toggleMic);
 document.getElementById('btn-send').addEventListener('click', sendChatFromInput);
 document.getElementById('input-chat').addEventListener('keydown', e=>{ if(e.key==='Enter') sendChatFromInput(); });
 function sendChatFromInput(){

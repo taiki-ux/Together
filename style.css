@@ -988,6 +988,29 @@ label{
   justify-content:space-between; gap:10px;
 }
 
+/* ================= Chat page mode ================= */
+.chat-page-mount{ flex:1; display:flex; min-height:55vh; background:var(--bg-panel); border:1px solid var(--line); border-radius:16px; overflow:hidden; }
+.chat-page-mount .chat-col{ flex:1; }
+
+/* ================= Talk page ================= */
+.talk-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(120px,1fr)); gap:16px; margin:16px 0 24px; }
+.talk-tile{ background:var(--bg-panel); border:1px solid var(--line); border-radius:16px; padding:20px 12px; display:flex; flex-direction:column; align-items:center; gap:8px; }
+.talk-tile .talk-avatar{ width:64px; height:64px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:22px; color:#0b0f1a; border:3px solid transparent; }
+.talk-tile .talk-avatar.speaking{ border-color:var(--teal); box-shadow:0 0 0 6px rgba(94,230,208,0.18); animation:pulse 1.1s ease-in-out infinite; }
+.talk-name{ font-size:13px; font-weight:600; }
+.talk-mic-state{ font-size:11px; color:var(--text-muted); }
+.talk-mic-btn{ display:block; margin:0 auto; padding:16px 32px; border-radius:999px; border:none; font-size:16px; font-weight:800; background:var(--teal); color:#08201c; cursor:pointer; }
+.talk-mic-btn.on{ background:var(--coral); color:#1a0b10; }
+
+/* ================= Playlist page ================= */
+.playlist-section{ margin-bottom:24px; }
+.playlist-section h4{ margin:0 0 10px; font-size:12px; text-transform:uppercase; letter-spacing:0.1em; color:var(--text-muted); font-weight:700; }
+.playlist-list{ display:flex; flex-direction:column; gap:8px; }
+.playlist-item{ display:flex; align-items:center; justify-content:space-between; gap:10px; background:var(--bg-panel-2); border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+.playlist-item span:first-child{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; }
+.playlist-actions{ display:flex; align-items:center; gap:8px; flex-shrink:0; }
+
+
 /* ================= Sidebar ================= */
 .side-col{ 
   border-left:1px solid var(--line); display:flex; flex-direction:column; 
