@@ -443,17 +443,24 @@ const AI_FILLERS = [
   "Ha! Okay okay, carry on 😄",
   "That's the spirit! Someone say the word 'joke' if you want one 👀"
 ];
+function buildRoomContext(){
+  const recentMessages = recentChatLog.slice(-8).map(m=> `${m.name}: ${m.text}`).join('\n');
+  const nowWatching = YTChannels.video.currentId ? (document.getElementById('input-video-url').value.trim() || YTChannels.video.currentId) : null;
+  const nowPlaying = YTChannels.music.currentId ? (document.getElementById('input-music-url').value.trim() || YTChannels.music.currentId) : null;
+  return { recentMessages, nowWatching, nowPlaying };
+}
+
 async function respondAsAI(triggerText){
   let reply = null;
   try{
     const res = await fetch(AI_FUNCTION_URL, {
       method:'POST',
       headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${SUPABASE_ANON_KEY}`, 'apikey':SUPABASE_ANON_KEY },
-      body: JSON.stringify({ message: triggerText })
+      body: JSON.stringify({ message: triggerText, context: buildRoomContext() })
     });
     if (res.ok){ const json = await res.json(); reply = json.reply; }
-  }catch(e){ 
-    console.warn('AI function call failed:', e);
+  }catch(e){
+    console.warn('AI function call failed, falling back to scripted reply:', e);
   }
   if (!reply) reply = scriptedAIReply(triggerText);
   sendChatMessage('🤖 Buddy', reply, true);

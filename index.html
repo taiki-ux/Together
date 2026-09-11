@@ -294,6 +294,38 @@
               <button class="btn btn-primary" id="btn-woa-start">Start round</button>
             </div>
           </div>
+
+          <div class="game-panel" id="game-ttl" style="display:none;">
+            <button class="back-link" data-back-game type="button">← Games</button>
+            <div id="ttl-body">
+              <p class="hint">Take a turn: write two truths and one lie, everyone else guesses which is the lie.</p>
+              <button class="btn btn-secondary" id="btn-ttl-turn" type="button">It's my turn</button>
+            </div>
+          </div>
+
+          <div class="game-panel" id="game-tod" style="display:none;">
+            <button class="back-link" data-back-game type="button">← Games</button>
+            <div id="tod-body">
+              <p class="hint">Spin to pick who's up and whether they get a truth or a dare — answer or act it out over voice.</p>
+              <button class="btn btn-primary" id="btn-tod-spin" type="button">Spin</button>
+            </div>
+          </div>
+
+          <div class="game-panel" id="game-mlt" style="display:none;">
+            <button class="back-link" data-back-game type="button">← Games</button>
+            <div id="mlt-body">
+              <p class="hint">Vote for who in the room fits the prompt best.</p>
+              <button class="btn btn-primary" id="btn-mlt-start" type="button">Start round</button>
+            </div>
+          </div>
+
+          <div class="game-panel draft-game" id="game-draft" style="display:none;">
+            <button class="back-link" data-back-game type="button">← Games</button>
+            <div id="draft-body">
+              <p class="hint">Everyone drafts picks, turn by turn, from a shared category. Build the best lineup.</p>
+              <button class="btn draft-start-btn" id="btn-draft-start" type="button">Start the draft</button>
+            </div>
+          </div>
         </div>
         
         <!-- CHAT (full page) -->

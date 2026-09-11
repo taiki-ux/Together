@@ -20,11 +20,11 @@ function shuffledOrder(len){ const arr=[...Array(len).keys()]; for(let i=arr.len
 // status 'soon'  -> shows a locked card, taps produce a toast
 const GAME_CATALOG = [
   {key:'romance', emoji:'❤️', name:'Romance', games:[
-    {name:'Couples Quiz', status:'soon'}, {name:'Love Questions', status:'soon'}, {name:'Truth or Dare: Couples', status:'soon'}]},
+    {name:'Couples Quiz', status:'soon'}, {name:'Love Questions', status:'soon'}, {name:'Truth or Dare: Couples', status:'ready'}]},
   {key:'chill', emoji:'😌', name:'Chill', games:[
-    {name:'Would You Rather', status:'ready', panelId:'wyr'}, {name:'Two Truths & a Lie', status:'soon'}, {name:'20 Questions', status:'soon'}]},
+    {name:'Would You Rather', status:'ready', panelId:'wyr'}, {name:'Two Truths & a Lie', status:'ready'}, {name:'20 Questions', status:'soon'}]},
   {key:'funny', emoji:'😂', name:'Funny & Jokes', games:[
-    {name:'Wrong Answers Only', status:'ready', panelId:'woa'}, {name:'Finish the Sentence', status:'soon'}, {name:'Most Likely To', status:'soon'}]},
+    {name:'Wrong Answers Only', status:'ready', panelId:'woa'}, {name:'Finish the Sentence', status:'soon'}, {name:'Most Likely To', status:'ready'}]},
   {key:'puzzles', emoji:'🧩', name:'Puzzles', games:[
     {name:'Riddles', status:'soon'}, {name:'Word Scramble', status:'soon'}, {name:'Memory Match', status:'soon'}]},
   {key:'mindgames', emoji:'🧠', name:'Mind Games', games:[
@@ -52,7 +52,7 @@ const GAME_CATALOG = [
   {key:'social', emoji:'👫', name:'Social', games:[
     {name:'Who Knows Me Best?', status:'soon'}, {name:'Deep Questions', status:'soon'}, {name:'This or That', status:'ready', panelId:'tot'}]},
   {key:'challenge', emoji:'💀', name:'Challenge', games:[
-    {name:'30-Second Challenge', status:'soon'}, {name:'Last Player Standing', status:'soon'}, {name:'Survival Challenge', status:'soon'}]},
+    {name: 'Draft', status:'ready', panelId:'draft'}, {name:'30-Second Challenge', status:'soon'}, {name:'Last Player Standing', status:'soon'}, {name:'Survival Challenge', status:'soon'}]},
   {key:'music', emoji:'🎵', name:'Music', games:[
     {name:'Guess the Song', status:'soon'}, {name:'Finish the Lyrics', status:'soon'}, {name:'Music Trivia', status:'soon'}]},
   {key:'movies', emoji:'🎬', name:'Movies & Anime', games:[
@@ -115,7 +115,7 @@ function openGame(id){
 }
 function closeGame(){
   document.getElementById('category-detail').style.display='block';
-  ['trivia','wyr','ttt','tot','woa'].forEach(g=> document.getElementById('game-'+g).style.display='none');
+  ['trivia','wyr','ttt','tot','woa','ttl','tod','mlt','draft'].forEach(g=> document.getElementById('game-'+g).style.display='none');
 }
 
 /* ---------------- Trivia ---------------- */
@@ -136,17 +136,51 @@ const TRIVIA_BANK = [
 let triviaOrder = [];
 let triviaState = { qIndex:-1, answers:{}, scores:{}, revealed:true, timerHandle:null };
 
-function triviaNext(broadcastIt){
-  if (triviaOrder.length===0) triviaOrder = shuffledOrder(TRIVIA_BANK.length);
-  const idx = triviaOrder.shift();
-  startTriviaQuestion(idx, TRIVIA_BANK[idx], broadcastIt);
+let triviaRoundCounter = 0;
+let askedTriviaQuestions = [];
+
+async function fetchAiTriviaQuestion(){
+  try{
+    const res = await fetch(AI_FUNCTION_URL, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${SUPABASE_ANON_KEY}`, 'apikey':SUPABASE_ANON_KEY },
+      body: JSON.stringify({ mode:'trivia', askedQuestions: askedTriviaQuestions.slice(-15) })
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    const t = json.trivia;
+    if (t && typeof t.question === 'string' && Array.isArray(t.choices) && t.choices.length === 4 && typeof t.correctIndex === 'number'){
+      return { q: t.question, choices: t.choices, correct: t.correctIndex };
+    }
+    return null;
+  }catch(e){
+    console.warn('AI trivia fetch failed:', e);
+    return null;
+  }
 }
-function startTriviaQuestion(idx, bankQ, broadcastIt){
+
+async function triviaNext(broadcastIt){
+  if (broadcastIt){
+    const body = document.getElementById('trivia-body');
+    if (body) body.innerHTML = '<p class="hint">🤖 Cooking up a question…</p>';
+  }
+  let q = await fetchAiTriviaQuestion();
+  if (!q){
+    if (triviaOrder.length===0) triviaOrder = shuffledOrder(TRIVIA_BANK.length);
+    const idx = triviaOrder.shift();
+    q = TRIVIA_BANK[idx];
+    if (broadcastIt) toast('AI trivia is briefly unavailable — using an offline question', 'err');
+  }
+  askedTriviaQuestions.push(q.q);
+  const roundId = 'r' + (triviaRoundCounter++) + '-' + Date.now();
+  startTriviaQuestion(roundId, q, broadcastIt);
+}
+function startTriviaQuestion(roundId, bankQ, broadcastIt){
   clearTimeout(triviaState.timerHandle);
-  triviaState = { qIndex: idx, answers:{}, scores: triviaState.scores||{}, revealed:false, timerHandle:null };
+  triviaState = { qIndex: roundId, answers:{}, scores: triviaState.scores||{}, revealed:false, timerHandle:null, _correct: bankQ.correct };
   renderTriviaQuestion(bankQ);
   triviaState.timerHandle = setTimeout(revealTrivia, 10000);
-  if (broadcastIt) broadcast({type:'trivia', action:'question', idx, q:bankQ.q, choices:bankQ.choices, correct:bankQ.correct});
+  if (broadcastIt) broadcast({type:'trivia', action:'question', idx:roundId, q:bankQ.q, choices:bankQ.choices, correct:bankQ.correct});
 }
 function renderTriviaQuestion(bankQ){
   const body = document.getElementById('trivia-body');
@@ -183,7 +217,7 @@ registerHandler('trivia', (fromId, data)=>{
 function revealTrivia(){
   if (triviaState.revealed) return;
   triviaState.revealed = true;
-  const correct = triviaState._correct!==undefined ? triviaState._correct : TRIVIA_BANK[triviaState.qIndex].correct;
+  const correct = triviaState._correct;
   document.querySelectorAll('#trivia-body .choice-btn').forEach(btn=>{
     const i = parseInt(btn.dataset.i,10);
     if (i===correct) btn.classList.add('correct');
@@ -542,4 +576,289 @@ function renderWoaSubmissions(){
     const name = pid===myId ? 'You' : (participants[pid]?.name || '…');
     return `<div class="score-row"><span>${escapeHtml(name)}</span><b>${escapeHtml(text)}</b></div>`;
   }).join('');
+}
+
+document.getElementById('btn-ttl-turn').addEventListener('click', ttlStartTurn);
+document.getElementById('btn-tod-spin').addEventListener('click', ()=> todSpin(true));
+document.getElementById('btn-mlt-start').addEventListener('click', ()=> mltNext(true));
+document.getElementById('btn-draft-start').addEventListener('click', draftStart);
+
+/* ---------------- Two Truths & a Lie (Chill) ---------------- */
+let ttlState = { active:false, submitterId:null, statements:[], guesses:{}, revealed:false, correctIndex:null };
+
+function ttlStartTurn(){
+  const body = document.getElementById('ttl-body');
+  body.innerHTML = `
+    <p class="hint">Write two true statements and one lie about yourself.</p>
+    <div class="field"><input type="text" id="ttl-input-0" placeholder="Statement 1" maxlength="120"></div>
+    <div class="field"><input type="text" id="ttl-input-1" placeholder="Statement 2" maxlength="120"></div>
+    <div class="field"><input type="text" id="ttl-input-2" placeholder="Statement 3" maxlength="120"></div>
+    <p class="hint">Which one is the lie?</p>
+    <div class="quiz-choices">
+      <button class="choice-btn" data-lie="0"><span>Statement 1</span></button>
+      <button class="choice-btn" data-lie="1"><span>Statement 2</span></button>
+      <button class="choice-btn" data-lie="2"><span>Statement 3</span></button>
+    </div>
+    <div class="quiz-actions"><button class="btn btn-primary" id="btn-ttl-submit" type="button">Submit</button></div>
+  `;
+  let chosenLie = null;
+  body.querySelectorAll('[data-lie]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      chosenLie = parseInt(btn.dataset.lie,10);
+      body.querySelectorAll('[data-lie]').forEach(b=> b.classList.toggle('selected', b===btn));
+    });
+  });
+  document.getElementById('btn-ttl-submit').addEventListener('click', ()=>{
+    const statements = [0,1,2].map(i=> document.getElementById('ttl-input-'+i).value.trim());
+    if (statements.some(s=>!s) || chosenLie===null){ toast('Fill in all three and mark the lie'); return; }
+    ttlState = { active:true, submitterId:myId, statements, guesses:{}, revealed:false, correctIndex:chosenLie };
+    renderTtl();
+    broadcast({ type:'ttl', action:'statements', submitterId:myId, submitterName:myName, statements });
+  });
+}
+registerHandler('ttl', (fromId, data)=>{
+  if (data.action==='statements'){
+    ttlState = { active:true, submitterId:data.submitterId, submitterName:data.submitterName, statements:data.statements, guesses:{}, revealed:false, correctIndex:null };
+    renderTtl();
+  } else if (data.action==='guess'){
+    if (ttlState.guesses[data.peerId]===undefined) ttlState.guesses[data.peerId] = data.choice;
+    renderTtlTally();
+  } else if (data.action==='reveal'){
+    ttlState.correctIndex = data.correctIndex;
+    ttlState.revealed = true;
+    renderTtlReveal();
+  }
+});
+function renderTtl(){
+  const body = document.getElementById('ttl-body');
+  const isSubmitter = ttlState.submitterId === myId;
+  const name = isSubmitter ? 'You' : (participants[ttlState.submitterId]?.name || ttlState.submitterName || '…');
+  body.innerHTML = `
+    <p class="quiz-question">${escapeHtml(name)}'s two truths and a lie — which is the lie?</p>
+    <div class="quiz-choices">${ttlState.statements.map((s,i)=>`<button class="choice-btn" data-guess="${i}" ${isSubmitter?'disabled':''}><span>${escapeHtml(s)}</span></button>`).join('')}</div>
+    <p class="hint" id="ttl-tally" style="margin-top:10px;"></p>
+    ${isSubmitter ? '<div class="quiz-actions"><button class="btn btn-primary" id="btn-ttl-reveal" type="button">Reveal the lie</button></div>' : ''}
+  `;
+  if (!isSubmitter){
+    body.querySelectorAll('[data-guess]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        if (ttlState.guesses[myId]!==undefined || ttlState.revealed) return;
+        const i = parseInt(btn.dataset.guess,10);
+        ttlState.guesses[myId] = i;
+        btn.classList.add('selected');
+        broadcast({ type:'ttl', action:'guess', peerId:myId, choice:i });
+      });
+    });
+  } else {
+    document.getElementById('btn-ttl-reveal').addEventListener('click', ()=>{
+      broadcast({ type:'ttl', action:'reveal', correctIndex: ttlState.correctIndex });
+      ttlState.revealed = true;
+      renderTtlReveal();
+    });
+  }
+  renderTtlTally();
+}
+function renderTtlTally(){
+  const el = document.getElementById('ttl-tally');
+  if (!el) return;
+  const count = Object.keys(ttlState.guesses).length;
+  el.textContent = `${count} guess${count===1?'':'es'} in so far…`;
+}
+function renderTtlReveal(){
+  document.querySelectorAll('#ttl-body .choice-btn').forEach(btn=>{
+    const i = parseInt(btn.dataset.guess ?? btn.dataset.lie ?? '-1', 10);
+    if (i === ttlState.correctIndex) btn.classList.add('correct');
+  });
+  const el = document.getElementById('ttl-tally');
+  if (el){
+    const correctCount = Object.values(ttlState.guesses).filter(g=> g===ttlState.correctIndex).length;
+    el.textContent = `The lie was statement ${ttlState.correctIndex+1} — ${correctCount} of ${Object.keys(ttlState.guesses).length} guessed right.`;
+  }
+  if (!document.getElementById('btn-ttl-again')){
+    const div = document.createElement('div'); div.className='quiz-actions';
+    div.innerHTML = `<button class="btn btn-secondary" id="btn-ttl-again" type="button">Someone else's turn</button>`;
+    document.getElementById('ttl-body').appendChild(div);
+    document.getElementById('btn-ttl-again').addEventListener('click', ttlStartTurn);
+  }
+}
+
+/* ---------------- Truth or Dare (Romance) ---------------- */
+const TOD_TRUTHS = [
+  "What's the most embarrassing thing you've done for love?",
+  "Who was your first celebrity crush?",
+  "What's a secret you've never told anyone in this room?",
+  "What's the pettiest thing you've ever done?",
+  "What's your most irrational fear?",
+  "What's a lie you've told that you never got caught for?"
+];
+const TOD_DARES = [
+  "Do your best impression of someone else in the room.",
+  "Text the last person you called 'miss you' or similar right now.",
+  "Talk in an accent for the next two minutes.",
+  "Let the group pick your profile picture for a day.",
+  "Sing the chorus of your most-played song.",
+  "Do 10 pushups on camera... or just really commit to the bit."
+];
+function todSpin(broadcastIt){
+  const ids = Object.keys(participants);
+  if (ids.length === 0) return;
+  const targetId = ids[Math.floor(Math.random()*ids.length)];
+  const kind = Math.random() < 0.5 ? 'truth' : 'dare';
+  const bank = kind === 'truth' ? TOD_TRUTHS : TOD_DARES;
+  const prompt = bank[Math.floor(Math.random()*bank.length)];
+  renderTod(targetId, kind, prompt);
+  if (broadcastIt) broadcast({ type:'tod', action:'assign', targetId, kind, prompt });
+}
+registerHandler('tod', (fromId, data)=>{
+  if (data.action==='assign') renderTod(data.targetId, data.kind, data.prompt);
+});
+function renderTod(targetId, kind, prompt){
+  const name = targetId===myId ? 'You' : (participants[targetId]?.name || '…');
+  const body = document.getElementById('tod-body');
+  body.innerHTML = `
+    <p class="quiz-question">${escapeHtml(name)} got: ${kind==='truth' ? '🗣 Truth' : '🔥 Dare'}</p>
+    <p class="hint" style="font-size:15px; color:var(--text);">${escapeHtml(prompt)}</p>
+    <div class="quiz-actions"><button class="btn btn-primary" id="btn-tod-again" type="button">Spin again</button></div>
+  `;
+  document.getElementById('btn-tod-again').addEventListener('click', ()=> todSpin(true));
+}
+
+/* ---------------- Most Likely To (Funny & Jokes) ---------------- */
+const MLT_PROMPTS = [
+  "fall asleep first during a movie night",
+  "text back a week late",
+  "cry during a Pixar movie",
+  "become famous for the weirdest reason",
+  "survive a horror movie the longest",
+  "forget their own birthday plans",
+  "win an argument with pure confidence, no facts",
+  "become a reality TV star"
+];
+let mltOrder = [];
+let mltState = { idx:-1, prompt:'', votes:{} };
+function mltNext(broadcastIt){
+  if (mltOrder.length===0) mltOrder = shuffledOrder(MLT_PROMPTS.length);
+  const idx = mltOrder.shift();
+  mltState = { idx, prompt: MLT_PROMPTS[idx], votes:{} };
+  renderMlt();
+  if (broadcastIt) broadcast({ type:'mlt', action:'question', idx, prompt: mltState.prompt });
+}
+registerHandler('mlt', (fromId, data)=>{
+  if (data.action==='question'){
+    mltState = { idx:data.idx, prompt:data.prompt, votes:{} };
+    renderMlt();
+  } else if (data.action==='vote'){
+    if (data.idx===mltState.idx) mltState.votes[data.peerId] = data.choice;
+    renderMltTally();
+  }
+});
+function renderMlt(){
+  const body = document.getElementById('mlt-body');
+  const others = Object.keys(participants);
+  body.innerHTML = `
+    <p class="quiz-question">Most likely to ${escapeHtml(mltState.prompt)}?</p>
+    <div class="quiz-choices">${others.map(id=>`<button class="choice-btn" data-vote="${id}"><span>${escapeHtml(id===myId?'You':participants[id].name)}</span></button>`).join('')}</div>
+    <p class="hint" id="mlt-tally" style="margin-top:10px;"></p>
+    <div class="quiz-actions"><button class="btn btn-primary" id="btn-mlt-next" type="button">Next round</button></div>
+  `;
+  body.querySelectorAll('[data-vote]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      mltState.votes[myId] = btn.dataset.vote;
+      body.querySelectorAll('[data-vote]').forEach(b=> b.classList.toggle('selected', b===btn));
+      broadcast({ type:'mlt', action:'vote', idx:mltState.idx, peerId:myId, choice:btn.dataset.vote });
+      renderMltTally();
+    });
+  });
+  document.getElementById('btn-mlt-next').addEventListener('click', ()=> mltNext(true));
+  renderMltTally();
+}
+function renderMltTally(){
+  const el = document.getElementById('mlt-tally');
+  if (!el) return;
+  const counts = {};
+  Object.values(mltState.votes).forEach(id=> counts[id] = (counts[id]||0)+1);
+  const parts = Object.entries(counts).sort((a,b)=>b[1]-a[1]).map(([id,c])=>{
+    const name = id===myId ? 'You' : (participants[id]?.name || '…');
+    return `${escapeHtml(name)}: ${c}`;
+  });
+  el.textContent = parts.length ? parts.join(' · ') : 'No votes yet';
+}
+
+/* ---------------- Draft (Challenge) — its own visual identity ---------------- */
+const DRAFT_CATEGORIES = [
+  { name:"Best comfort foods", items:["Pizza","Mac & cheese","Ramen","Fried chicken","Tacos","Grilled cheese","Mashed potatoes","Dumplings","Ice cream","Burgers","Fries","Curry"] },
+  { name:"Dream vacation spots", items:["Tokyo","Santorini","Bali","Iceland","New York","Maldives","Rome","Cape Town","Banff","Kyoto","Barcelona","Patagonia"] },
+  { name:"Superpowers", items:["Flight","Invisibility","Telepathy","Time travel","Super strength","Teleportation","Healing","Shape-shifting","Mind control","Immortality","Super speed","X-ray vision"] }
+];
+let draftState = { active:false, category:null, pool:[], order:[], turnIndex:0, picks:{}, picksPerPlayer:3 };
+
+function draftStart(){
+  const category = DRAFT_CATEGORIES[Math.floor(Math.random()*DRAFT_CATEGORIES.length)];
+  const order = Object.keys(participants);
+  if (order.length < 2){ toast('Need at least 2 people in the room to draft'); return; }
+  const picks = {}; order.forEach(id=> picks[id] = []);
+  draftState = { active:true, category, pool:[...category.items], order, turnIndex:0, picks, picksPerPlayer:3 };
+  renderDraft();
+  broadcast({ type:'draft', action:'start', category: category.name, pool: draftState.pool, order });
+}
+registerHandler('draft', (fromId, data)=>{
+  if (data.action==='start'){
+    const picks = {}; data.order.forEach(id=> picks[id] = []);
+    draftState = { active:true, category:{name:data.category, items:data.pool}, pool:[...data.pool], order:data.order, turnIndex:0, picks, picksPerPlayer:3 };
+    renderDraft();
+  } else if (data.action==='pick'){
+    const idx = draftState.pool.indexOf(data.item);
+    if (idx !== -1) draftState.pool.splice(idx,1);
+    if (!draftState.picks[data.peerId]) draftState.picks[data.peerId] = [];
+    draftState.picks[data.peerId].push(data.item);
+    draftState.turnIndex++;
+    renderDraft();
+  }
+});
+function draftCurrentPickerId(){
+  if (!draftState.active) return null;
+  const totalPicks = draftState.order.length * draftState.picksPerPlayer;
+  if (draftState.turnIndex >= totalPicks || draftState.pool.length === 0) return null;
+  return draftState.order[draftState.turnIndex % draftState.order.length];
+}
+function draftPick(item){
+  const currentPicker = draftCurrentPickerId();
+  if (currentPicker !== myId) return;
+  draftState.pool = draftState.pool.filter(i=> i!==item);
+  draftState.picks[myId].push(item);
+  draftState.turnIndex++;
+  renderDraft();
+  broadcast({ type:'draft', action:'pick', peerId:myId, item });
+}
+function renderDraft(){
+  const body = document.getElementById('draft-body');
+  if (!draftState.active){
+    body.innerHTML = `<p class="hint">Everyone drafts picks, turn by turn, from a shared category. Build the best lineup.</p><button class="btn draft-start-btn" id="btn-draft-start" type="button">Start the draft</button>`;
+    document.getElementById('btn-draft-start').addEventListener('click', draftStart);
+    return;
+  }
+  const currentPicker = draftCurrentPickerId();
+  const done = currentPicker === null;
+  const currentName = currentPicker ? (currentPicker===myId ? 'YOU' : (participants[currentPicker]?.name || '…').toUpperCase()) : null;
+
+  body.innerHTML = `
+    <div class="draft-banner">${done ? '🏁 DRAFT COMPLETE' : `🎯 ON THE CLOCK: ${escapeHtml(currentName)}`}</div>
+    <p class="draft-category">${escapeHtml(draftState.category.name)}</p>
+    <div class="draft-pool">${draftState.pool.map(item=>`<button class="draft-chip" data-pick="${escapeHtml(item)}" ${currentPicker===myId ? '' : 'disabled'}>${escapeHtml(item)}</button>`).join('') || '<span class="hint">Pool empty</span>'}</div>
+    <div class="draft-boards">
+      ${draftState.order.map(id=>`
+        <div class="draft-board">
+          <h4>${id===myId ? 'You' : escapeHtml(participants[id]?.name || '…')}</h4>
+          <ol>${draftState.picks[id].map(p=>`<li>${escapeHtml(p)}</li>`).join('') || '<li class="hint">No picks yet</li>'}</ol>
+        </div>
+      `).join('')}
+    </div>
+    ${done ? '<div class="quiz-actions"><button class="btn draft-start-btn" id="btn-draft-again" type="button">Draft again</button></div>' : ''}
+  `;
+  body.querySelectorAll('[data-pick]').forEach(btn=>{
+    btn.addEventListener('click', ()=> draftPick(btn.dataset.pick));
+  });
+  if (done){
+    document.getElementById('btn-draft-again').addEventListener('click', draftStart);
+  }
 }

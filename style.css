@@ -518,7 +518,7 @@ label{
 
 .mode-nav{ 
   display:flex; gap:6px; background:var(--bg-panel-2); border:1px solid var(--line); 
-  border-radius:999px; padding:4px; margin:0 ;
+  border-radius:999px; padding:4px; margin:0 auto;
   box-shadow: 0 8px 24px rgba(0,0,0,0.3);
 }
 
@@ -987,6 +987,28 @@ label{
   border-radius:12px; padding:12px 14px; display:flex; align-items:center; 
   justify-content:space-between; gap:10px;
 }
+
+
+/* ================= Draft game — its own vibe: sports draft board ================= */
+.draft-game{ background:linear-gradient(160deg, #0d2b1e, #071710); border:1px solid #1f6b45; }
+.draft-start-btn{ background:linear-gradient(135deg, #ffcf3f, #ff9f1c); color:#241a00; border:none; border-radius:10px; padding:14px 24px; font-weight:800; font-size:15px; cursor:pointer; display:block; margin:0 auto; }
+.draft-banner{
+  background:#0f3624; border:1px solid #ffcf3f; color:#ffcf3f; text-align:center; font-weight:800;
+  letter-spacing:0.06em; padding:10px 14px; border-radius:10px; margin-bottom:14px; font-size:14px;
+}
+.draft-category{ text-align:center; color:#a9e8c9; font-style:italic; font-size:15px; margin:0 0 16px; }
+.draft-pool{ display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-bottom:22px; }
+.draft-chip{
+  background:#123a27; border:1px solid #2e8a5c; color:#e8fff2; border-radius:999px; padding:9px 16px;
+  font-size:13px; font-weight:600; cursor:pointer; transition:transform .1s, border-color .15s;
+}
+.draft-chip:hover:not(:disabled){ border-color:#ffcf3f; transform:translateY(-2px); }
+.draft-chip:disabled{ opacity:0.4; cursor:not-allowed; }
+.draft-boards{ display:grid; grid-template-columns:repeat(auto-fit, minmax(150px,1fr)); gap:14px; }
+.draft-board{ background:#0f3624; border:1px solid #1f6b45; border-radius:12px; padding:12px 14px; }
+.draft-board h4{ margin:0 0 8px; font-size:13px; color:#ffcf3f; font-style:normal; }
+.draft-board ol{ margin:0; padding-left:18px; font-size:12.5px; color:#e8fff2; }
+.draft-board ol li{ margin-bottom:4px; }
 
 /* ================= Chat page mode ================= */
 .chat-page-mount{ flex:1; display:flex; min-height:55vh; background:var(--bg-panel); border:1px solid var(--line); border-radius:16px; overflow:hidden; }

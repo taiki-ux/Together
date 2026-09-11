@@ -318,6 +318,7 @@ function sendChatMessage(name, text, isAI){
   addChatMessage(name, text, true, !!isAI);
   broadcast({type:'chat', name, text, isAI: !!isAI});
 }
+let recentChatLog = []; // rolling window the AI buddy uses for room context
 function addChatMessage(name, text, mine, isAI){
   const log = document.getElementById('chat-log');
   if (!log) return;
@@ -327,7 +328,11 @@ function addChatMessage(name, text, mine, isAI){
   div.innerHTML = `<div class="who" style="color:${color}">${escapeHtml(name)}</div><div class="txt">${escapeHtml(text)}</div>`;
   log.appendChild(div);
   log.scrollTop = log.scrollHeight;
+
+  recentChatLog.push({ name, text });
+  if (recentChatLog.length > 15) recentChatLog.shift();
 }
+
 function addSystemMessage(text){
   const log = document.getElementById('chat-log');
   if (!log) return;
