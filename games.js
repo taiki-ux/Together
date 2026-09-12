@@ -141,20 +141,15 @@ let askedTriviaQuestions = [];
 
 async function fetchAiTriviaQuestion(){
   try{
-    const res = await fetch(AI_FUNCTION_URL, {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${SUPABASE_ANON_KEY}`, 'apikey':SUPABASE_ANON_KEY },
-      body: JSON.stringify({ mode:'trivia', askedQuestions: askedTriviaQuestions.slice(-15) })
-    });
-    if (!res.ok) return null;
-    const json = await res.json();
+    const json = await callAiFunction({ mode:'trivia', askedQuestions: askedTriviaQuestions.slice(-15) });
     const t = json.trivia;
     if (t && typeof t.question === 'string' && Array.isArray(t.choices) && t.choices.length === 4 && typeof t.correctIndex === 'number'){
       return { q: t.question, choices: t.choices, correct: t.correctIndex };
     }
-    return null;
+    throw new Error('AI returned an unexpected question format');
   }catch(e){
-    console.warn('AI trivia fetch failed:', e);
+    console.warn('AI trivia unavailable after retry:', e.message);
+    toast(`🤖 AI trivia unavailable (${e.message}) — using an offline question`, 'err');
     return null;
   }
 }

@@ -415,6 +415,29 @@ function updateMicButtonsUI(on){
       } 
 } 
 
+async function callAiFunction(payload, attempt){
+  attempt = attempt || 1;
+  try{
+    const res = await fetch(AI_FUNCTION_URL, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${SUPABASE_ANON_KEY}`, 'apikey':SUPABASE_ANON_KEY },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error(`AI service responded with HTTP ${res.status}`);
+    const json = await res.json();
+    if (json.error) throw new Error(json.error);
+    return json;
+  }catch(e){
+    if (attempt === 1){
+      console.warn('AI call failed once, retrying:', e.message);
+      await new Promise(r=> setTimeout(r, 800));
+      return callAiFunction(payload, 2);
+    }
+    throw e;
+  }
+}
+
+
 document.getElementById('btn-mic').addEventListener('click', toggleMic);
 document.getElementById('btn-mic-talk').addEventListener('click', toggleMic);
 document.getElementById('btn-send').addEventListener('click', sendChatFromInput);
@@ -453,14 +476,12 @@ function buildRoomContext(){
 async function respondAsAI(triggerText){
   let reply = null;
   try{
-    const res = await fetch(AI_FUNCTION_URL, {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${SUPABASE_ANON_KEY}`, 'apikey':SUPABASE_ANON_KEY },
-      body: JSON.stringify({ message: triggerText, context: buildRoomContext() })
-    });
-    if (res.ok){ const json = await res.json(); reply = json.reply; }
+    const json = await callAiFunction({ message: triggerText, context: buildRoomContext() });
+    reply = json.reply;
+    if (!reply) throw new Error('AI returned an empty reply');
   }catch(e){
-    console.warn('AI function call failed, falling back to scripted reply:', e);
+    console.error('AI buddy unavailable after retry:', e);
+    toast(`🤖 AI is offline right now (${e.message}) — using a scripted reply instead`, 'err');
   }
   if (!reply) reply = scriptedAIReply(triggerText);
   sendChatMessage('🤖 Buddy', reply, true);
