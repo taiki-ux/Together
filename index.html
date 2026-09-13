@@ -176,13 +176,21 @@
 
         <!-- VIDEO -->
         <div class="pane" id="pane-video">
-          <div class="video-frame">
-            <div id="yt-player-video"></div>
-            <div class="video-placeholder" id="video-placeholder">
-              <div class="glow">▶</div>
-              <div>Paste a YouTube link below to start the night</div>
-            </div>
-          </div>
+         <div class="video-frame">
+           <div id="yt-player-video"></div>
+           <div class="video-placeholder" id="video-placeholder">
+             <div class="glow">▶</div>
+             <div>Paste a YouTube link below to start the night</div>
+           </div>
+           <div class="reaction-layer" id="reaction-layer-video"></div>
+         </div>
+         <div class="reaction-bar">
+           <button class="reaction-btn" data-emoji="😂" type="button">😂</button>
+           <button class="reaction-btn" data-emoji="❤️" type="button">❤️</button>
+           <button class="reaction-btn" data-emoji="😭" type="button">😭</button>
+           <button class="reaction-btn" data-emoji="😱" type="button">😱</button>
+           <button class="reaction-btn" data-emoji="🔥" type="button">🔥</button>
+         </div>
           <div class="load-row">
             <input type="text" id="input-video-url" placeholder="Paste a YouTube URL or video ID…">
             <button class="btn btn-primary" id="btn-load-video">Load</button>
@@ -204,8 +212,9 @@
 
         <!-- MUSIC -->
         <div class="pane" id="pane-music">
-          <div class="music-card">
-            <div class="vinyl" id="vinyl"></div>
+         <div class="music-card">
+           <div class="reaction-layer" id="reaction-layer-music"></div>
+           <div class="vinyl" id="vinyl"></div>
             <div class="music-meta">
               <div class="label">Now playing, together</div>
               <h3 id="music-title">Nothing queued yet</h3>
@@ -213,6 +222,15 @@
             </div>
             <div class="music-yt" id="yt-player-music"></div>
           </div>
+
+           <div class="reaction-layer" id="reaction-layer-video"></div>
+         <div class="reaction-bar">
+           <button class="reaction-btn" data-emoji="😂" type="button">😂</button>
+           <button class="reaction-btn" data-emoji="❤️" type="button">❤️</button>
+           <button class="reaction-btn" data-emoji="😭" type="button">😭</button>
+           <button class="reaction-btn" data-emoji="😱" type="button">😱</button>
+           <button class="reaction-btn" data-emoji="🔥" type="button">🔥</button>
+         </div>
 
           <div class="load-row">
             <input type="text" id="input-music-url" placeholder="Paste a YouTube or Spotify link…">
@@ -374,8 +392,8 @@
                 <div class="chat-log" id="chat-log"></div>
                  <p class="chat-hint">Tip: mention <b>@ai</b> for a joke, a movie pick, or a song pick.</p>
                 <div class="chat-input-row">
-                  <input type="text" id="input-chat" placeholder="Say something…" maxlength="500">
-                  <button class="btn btn-primary" id="btn-send">Send</button>
+                 <input type="text" id="input-chat" placeholder="Say something…" maxlength="500">
+                 <button class="btn btn-primary" id="btn-send">Send</button>
                 </div>
               </div>
             </div>

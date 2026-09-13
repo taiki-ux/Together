@@ -486,6 +486,7 @@ async function respondAsAI(triggerText){
   if (!reply) reply = scriptedAIReply(triggerText);
   sendChatMessage('🤖 Buddy', reply, true);
 }
+
 function scriptedAIReply(triggerText){
   const lower = triggerText.toLowerCase();
   if (/joke/.test(lower)) return AI_JOKES[Math.floor(Math.random()*AI_JOKES.length)];
@@ -493,6 +494,35 @@ function scriptedAIReply(triggerText){
   if (/song|music|track/.test(lower)) return `Try this: 🎵 "${suggestSong()}" — put it on and thank me later.`;
   return AI_FILLERS[Math.floor(Math.random()*AI_FILLERS.length)];
 }
+
+// ---------- Reactions ----------
+function spawnFloatingReaction(pane, emoji){
+  const layer = document.getElementById('reaction-layer-' + pane);
+  if (!layer) return;
+  const bubble = document.createElement('div');
+  bubble.className = 'reaction-bubble';
+  bubble.textContent = emoji;
+  bubble.style.left = (20 + Math.random()*60) + '%';
+  layer.appendChild(bubble);
+  setTimeout(()=> bubble.remove(), 2600);
+}
+function sendReaction(emoji){
+  const pane = (currentMode === 'music') ? 'music' : 'video';
+  spawnFloatingReaction(pane, emoji);
+  broadcast({ type:'reaction', emoji });
+}
+registerHandler('reaction', (fromId, data)=>{
+  // Shows wherever the receiver is currently looking, if that's Watch or Music —
+  // otherwise there's no visible spot for it right now, so it's just skipped.
+  if (currentMode === 'video' || currentMode === 'music'){
+    spawnFloatingReaction(currentMode, data.emoji);
+  }
+});
+document.querySelectorAll('.reaction-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=> sendReaction(btn.dataset.emoji));
+});
+
+
 window.onChatReceived = function(){ playChime(); };
 function playChime(){
   if (!window.soundOn) return;

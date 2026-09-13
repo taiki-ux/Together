@@ -988,6 +988,28 @@ label{
   justify-content:space-between; gap:10px;
 }
 
+/* ================= Reactions ================= */
+.reaction-layer{ position:absolute; inset:0; pointer-events:none; overflow:hidden; z-index:15; }
+.reaction-bubble{
+  position:absolute; bottom:10px; font-size:32px;
+  animation:floatUp 2.5s ease-out forwards;
+  filter:drop-shadow(0 2px 6px rgba(0,0,0,0.4));
+}
+@keyframes floatUp{
+  0%{ transform:translateY(0) scale(0.5); opacity:0; }
+  15%{ opacity:1; transform:translateY(-20px) scale(1.1); }
+  100%{ transform:translateY(-220px) scale(1); opacity:0; }
+}
+.reaction-bar{ display:flex; gap:8px; justify-content:center; }
+.reaction-btn{
+  background:var(--bg-panel-2); border:1px solid var(--line); border-radius:999px;
+  width:44px; height:44px; font-size:20px; display:flex; align-items:center; justify-content:center;
+  cursor:pointer; transition:transform .1s;
+}
+.reaction-btn:hover{ transform:scale(1.15); }
+.reaction-btn:active{ transform:scale(0.9); }
+.music-card{ position:relative; overflow:hidden; } /* needed so its reaction-layer positions correctly */
+
 
 /* ================= Draft game — its own vibe: sports draft board ================= */
 .draft-game{ background:linear-gradient(160deg, #0d2b1e, #071710); border:1px solid #1f6b45; }
