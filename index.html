@@ -191,10 +191,17 @@
            <button class="reaction-btn" data-emoji="😱" type="button">😱</button>
            <button class="reaction-btn" data-emoji="🔥" type="button">🔥</button>
          </div>
+
           <div class="load-row">
-            <input type="text" id="input-video-url" placeholder="Paste a YouTube URL or video ID…">
-            <button class="btn btn-primary" id="btn-load-video">Load</button>
-            <button class="btn btn-ghost" id="btn-save-video" title="Save to your playlist">⭐</button>
+           <input type="text" id="input-music-url" placeholder="Paste a YouTube or Spotify link…">
+           <button class="btn btn-violet" id="btn-load-music" type="button">Play now</button>
+           <button class="btn btn-secondary" id="btn-queue-add" type="button">➕ Queue</button>
+           <button class="btn btn-ghost" id="btn-save-music" type="button" title="Save to your playlist">⭐</button>
+          </div>
+
+          <div class="queue-section">
+           <h4 class="queue-heading">🎶 Up Next</h4>
+           <div id="queue-list" class="queue-list"></div>
           </div>
           <div class="controls-row">
             <button class="btn btn-ghost btn-sm" id="btn-play-video">▶ Play</button>
@@ -233,10 +240,17 @@
          </div>
 
           <div class="load-row">
-            <input type="text" id="input-music-url" placeholder="Paste a YouTube or Spotify link…">
-            <button class="btn btn-violet" id="btn-load-music">Play</button>
-            <button class="btn btn-ghost" id="btn-save-music" title="Save to your playlist">⭐</button>
+           <input type="text" id="input-music-url" placeholder="Paste a YouTube or Spotify link…">
+           <button class="btn btn-violet" id="btn-load-music" type="button">Play now</button>
+           <button class="btn btn-secondary" id="btn-queue-add" type="button">➕ Queue</button>
+           <button class="btn btn-ghost" id="btn-save-music" type="button" title="Save to your playlist">⭐</button>
           </div>
+
+          <div class="queue-section">
+           <h4 class="queue-heading">🎶 Up Next</h4>
+           <div id="queue-list" class="queue-list"></div>
+          </div>
+
           <div class="controls-row" id="music-sync-controls">
             <button class="btn btn-ghost btn-sm" id="btn-play-music">▶ Play</button>
             <button class="btn btn-ghost btn-sm" id="btn-pause-music">⏸ Pause</button>
@@ -390,7 +404,8 @@
             <div id="chat-sidebar-mount">
               <div class="chat-col" id="chat-col">
                 <div class="chat-log" id="chat-log"></div>
-                 <p class="chat-hint">Tip: mention <b>@ai</b> for a joke, a movie pick, or a song pick.</p>
+                <p class="typing-indicator-text" id="typing-indicator"></p>
+                <p class="chat-hint">Tip: mention <b>@ai</b> for a joke, a movie pick, or a song pick.</p>
                 <div class="chat-input-row">
                  <input type="text" id="input-chat" placeholder="Say something…" maxlength="500">
                  <button class="btn btn-primary" id="btn-send">Send</button>

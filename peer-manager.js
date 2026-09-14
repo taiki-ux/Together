@@ -281,6 +281,33 @@ registerHandler('mode', (fromId, data)=>{
   if (window.onRemoteMode) window.onRemoteMode(data.mode);
 });
 
+
+
+let typingUsers = {};         // peerId -> name
+let typingTimeouts = {};
+let buddyTyping = false;
+
+function renderTypingIndicator(){
+  const el = document.getElementById('typing-indicator');
+  if (!el) return;
+  if (buddyTyping){ el.textContent = '🤖 Buddy is typing…'; return; }
+  const names = Object.values(typingUsers);
+  if (names.length === 0){ el.textContent = ''; return; }
+  el.textContent = names.length === 1 ? `${names[0]} is typing…` : `${names.join(', ')} are typing…`;
+}
+function showBuddyTyping(on){ buddyTyping = on; renderTypingIndicator(); }
+
+registerHandler('typing', (fromId, data)=>{
+  clearTimeout(typingTimeouts[fromId]);
+  if (data.state === 'start'){
+    typingUsers[fromId] = data.name;
+    typingTimeouts[fromId] = setTimeout(()=>{ delete typingUsers[fromId]; renderTypingIndicator(); }, 4000);
+  } else {
+    delete typingUsers[fromId];
+  }
+  renderTypingIndicator();
+});
+
 // ---------- Speaking detection ----------
 function attachSpeakingDetector(stream, key){
   try{

@@ -362,9 +362,25 @@ document.getElementById('btn-fullscreen').addEventListener('click', async ()=>{
 });
 
 document.getElementById('btn-load-music').addEventListener('click', ()=>{
-  const res = musicLoadFromInput(document.getElementById('input-music-url').value);
-  if (!res.ok) toast(res.message);
+  const raw = document.getElementById('input-music-url').value;
+  const res = musicLoadFromInput(raw);
+  if (!res.ok){ toast(res.message, 'err'); return; }
+  // "Play now" replaces the whole queue with just this track, synced to everyone.
+  const id = extractVideoId(raw);
+  musicQueue = [{ id: 'q'+Date.now()+Math.random().toString(36).slice(2,7), videoId:id, title:raw.trim(), addedBy: myName }];
+  queueVotes = {};
+  renderQueue();
+  broadcast({ type:'queue', action:'sync', queue: musicQueue, votes: queueVotes });
 });
+document.getElementById('btn-queue-add').addEventListener('click', ()=>{
+  const raw = document.getElementById('input-music-url').value.trim();
+  const id = extractVideoId(raw);
+  if (!id){ toast("Couldn't find a track in that link", 'err'); return; }
+  queueAddTrack(id, raw);
+  document.getElementById('input-music-url').value = '';
+  toast('Added to queue 🎶', 'ok');
+});
+
 document.getElementById('btn-play-music').addEventListener('click', ()=>YTSync.play('music'));
 document.getElementById('btn-pause-music').addEventListener('click', ()=>YTSync.pause('music'));
 document.getElementById('btn-sync-music').addEventListener('click', ()=>YTSync.syncToMe('music'));
@@ -442,9 +458,28 @@ document.getElementById('btn-mic').addEventListener('click', toggleMic);
 document.getElementById('btn-mic-talk').addEventListener('click', toggleMic);
 document.getElementById('btn-send').addEventListener('click', sendChatFromInput);
 document.getElementById('input-chat').addEventListener('keydown', e=>{ if(e.key==='Enter') sendChatFromInput(); });
+
+
+let myTypingActive = false;
+let myTypingTimeout = null;
+document.getElementById('input-chat').addEventListener('input', ()=>{
+  if (!myTypingActive){
+    myTypingActive = true;
+    broadcast({ type:'typing', name: myName, state:'start' });
+  }
+  clearTimeout(myTypingTimeout);
+  myTypingTimeout = setTimeout(()=>{
+    myTypingActive = false;
+    broadcast({ type:'typing', name: myName, state:'stop' });
+  }, 2000);
+});
+
 function sendChatFromInput(){
   const input = document.getElementById('input-chat');
-  const text = input.value.trim(); if (!text) return;
+  const text = input.value.trim();
+  if (!text) return;
+  clearTimeout(myTypingTimeout);
+  if (myTypingActive){ myTypingActive = false; broadcast({ type:'typing', name: myName, state:'stop' }); }
   sendChatMessage(myName, text, false);
   input.value = '';
   if (/(?:^|\s)@ai(?:\s|$)/i.test(text)) respondAsAI(text);
@@ -475,6 +510,7 @@ function buildRoomContext(){
 
 async function respondAsAI(triggerText){
   let reply = null;
+  showBuddyTyping(true);
   try{
     const json = await callAiFunction({ message: triggerText, context: buildRoomContext() });
     reply = json.reply;
@@ -483,6 +519,7 @@ async function respondAsAI(triggerText){
     console.error('AI buddy unavailable after retry:', e);
     toast(`🤖 AI is offline right now (${e.message}) — using a scripted reply instead`, 'err');
   }
+  showBuddyTyping(false);
   if (!reply) reply = scriptedAIReply(triggerText);
   sendChatMessage('🤖 Buddy', reply, true);
 }

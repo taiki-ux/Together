@@ -1011,6 +1011,23 @@ label{
 .music-card{ position:relative; overflow:hidden; } /* needed so its reaction-layer positions correctly */
 
 
+
+.typing-indicator-text{ font-size:11px; color:var(--text-muted); font-style:italic; padding:0 14px; min-height:14px; }
+
+/* ================= Collaborative music queue ================= */
+.queue-section{ margin-top:4px; }
+.queue-heading{ margin:0 0 10px; font-size:12px; text-transform:uppercase; letter-spacing:0.1em; color:var(--text-muted); font-weight:700; }
+.queue-list{ display:flex; flex-direction:column; gap:8px; }
+.queue-item{ display:flex; align-items:center; justify-content:space-between; gap:10px; background:var(--bg-panel-2); border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+.queue-item.now-playing{ border-color:var(--violet); background:rgba(167,139,250,0.08); }
+.queue-item-info{ overflow:hidden; }
+.queue-item-info .title{ font-size:13px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.queue-item-info .added-by{ font-size:11px; color:var(--text-muted); }
+.queue-votes{ display:flex; align-items:center; gap:6px; flex-shrink:0; }
+.vote-btn{ background:var(--bg-panel); border:1px solid var(--line); border-radius:999px; padding:5px 9px; font-size:12px; cursor:pointer; display:flex; align-items:center; gap:4px; }
+.vote-btn.voted{ border-color:var(--gold); }
+.queue-empty{ font-size:12px; color:var(--text-muted); }
+
 /* ================= Draft game — its own vibe: sports draft board ================= */
 .draft-game{ background:linear-gradient(160deg, #0d2b1e, #071710); border:1px solid #1f6b45; }
 .draft-start-btn{ background:linear-gradient(135deg, #ffcf3f, #ff9f1c); color:#241a00; border:none; border-radius:10px; padding:14px 24px; font-weight:800; font-size:15px; cursor:pointer; display:block; margin:0 auto; }
