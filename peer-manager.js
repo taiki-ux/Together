@@ -1,9 +1,12 @@
 /* ============================================================
    PEER-MANAGER.JS
-   PeerJS signaling/data/audio plumbing, participant roster,
-   chat transport, and the DataHandlers dispatch registry that
-   the other modules (youtube-sync, music-player, games) hook
-   into. Everything here is shared, room-level state.
+   PeerJS signaling/data/audio plumbing, participant roster, and
+   the DataHandlers dispatch registry that the other modules
+   (youtube-sync, queue, chat, games) hook into. Everything here
+   is shared, room-level state.
+
+   Chat (transport, reactions, replies, edits) and typing
+   indicators now live in chat.js.
    ============================================================ */
 
 // ---------- Utils ----------
@@ -165,7 +168,8 @@ function joinRoomPresence(){
       const state = roomChannel.presenceState();
       Object.values(state).forEach(entries=> entries.forEach(entry=>{
         if (entry.peerId === myId) return;
-        if (!participants[entry.peerId]) participants[entry.peerId] = { name: entry.name };
+        if (!participants[entry.peerId]) participants[entry.peerId] = { name: entry.name, userId: entry.userId || null };
+        else participants[entry.peerId].userId = entry.userId || null;
         connectToPeer(entry.peerId);
       }));
       renderOrbit();
@@ -173,7 +177,8 @@ function joinRoomPresence(){
     .on('presence', { event:'join' }, ({ newPresences })=>{
       newPresences.forEach(p=>{
         if (p.peerId === myId) return;
-        if (!participants[p.peerId]){ participants[p.peerId] = { name:p.name }; addSystemMessage(`${p.name} joined the room`); }
+        if (!participants[p.peerId]){ participants[p.peerId] = { name:p.name, userId: p.userId || null }; addSystemMessage(`${p.name} joined the room`); }
+        else participants[p.peerId].userId = p.userId || null;
         connectToPeer(p.peerId);
       });
       renderOrbit();
@@ -185,7 +190,7 @@ function joinRoomPresence(){
       if (window.onKnockReceived) window.onKnockReceived(payload);
     })
     .subscribe(async (status)=>{
-      if (status === 'SUBSCRIBED') await roomChannel.track({ peerId: myId, name: myName });
+      if (status === 'SUBSCRIBED') await roomChannel.track({ peerId: myId, name: myName, userId: (typeof currentUser!=='undefined' && currentUser) ? currentUser.id : null });
     });
 }
 function leaveRoomPresence(){
@@ -226,11 +231,23 @@ function setupMediaConn(call){
     audioEl.srcObject = remoteStream;
     audioEl.play().catch(err=> console.warn('Audio play blocked:', err));
     attachSpeakingDetector(remoteStream, call.peer);
+    if (typeof applyAudioSettings === 'function') applyAudioSettings(call.peer, audioEl);
   });
   call.on('close', ()=>{
     if (audioEls[call.peer]){ audioEls[call.peer].remove(); delete audioEls[call.peer]; }
     delete mediaConns[call.peer];
   });
+  // Best-effort auto-reconnect: a network blip can drop the underlying
+  // RTCPeerConnection without PeerJS itself firing 'close' or the person
+  // ever leaving the room's presence — catch that case too.
+  if (call.peerConnection){
+    call.peerConnection.addEventListener('connectionstatechange', ()=>{
+      const state = call.peerConnection.connectionState;
+      if ((state === 'failed' || state === 'disconnected') && typeof attemptMediaReconnect === 'function'){
+        setTimeout(()=> attemptMediaReconnect(call.peer), 2000);
+      }
+    });
+  }
 }
 
 function maybeCallPeer(peerId){
@@ -269,10 +286,6 @@ registerHandler('rename', (fromId, data)=>{
     renderOrbit();
   }
 });
-registerHandler('chat', (fromId, data)=>{
-  addChatMessage(data.name, data.text, false, !!data.isAI);
-  if (window.onChatReceived) window.onChatReceived();
-});
 registerHandler('mic', (fromId, data)=>{
   if (participants[fromId]) participants[fromId].muted = data.muted;
   renderOrbit();
@@ -282,31 +295,6 @@ registerHandler('mode', (fromId, data)=>{
 });
 
 
-
-let typingUsers = {};         // peerId -> name
-let typingTimeouts = {};
-let buddyTyping = false;
-
-function renderTypingIndicator(){
-  const el = document.getElementById('typing-indicator');
-  if (!el) return;
-  if (buddyTyping){ el.textContent = '🤖 Buddy is typing…'; return; }
-  const names = Object.values(typingUsers);
-  if (names.length === 0){ el.textContent = ''; return; }
-  el.textContent = names.length === 1 ? `${names[0]} is typing…` : `${names.join(', ')} are typing…`;
-}
-function showBuddyTyping(on){ buddyTyping = on; renderTypingIndicator(); }
-
-registerHandler('typing', (fromId, data)=>{
-  clearTimeout(typingTimeouts[fromId]);
-  if (data.state === 'start'){
-    typingUsers[fromId] = data.name;
-    typingTimeouts[fromId] = setTimeout(()=>{ delete typingUsers[fromId]; renderTypingIndicator(); }, 4000);
-  } else {
-    delete typingUsers[fromId];
-  }
-  renderTypingIndicator();
-});
 
 // ---------- Speaking detection ----------
 function attachSpeakingDetector(stream, key){
@@ -340,36 +328,6 @@ async function acquireMicStream(deviceId){
   return navigator.mediaDevices.getUserMedia(constraints);
 }
 
-// ---------- Chat ----------
-function sendChatMessage(name, text, isAI){
-  addChatMessage(name, text, true, !!isAI);
-  broadcast({type:'chat', name, text, isAI: !!isAI});
-}
-let recentChatLog = []; // rolling window the AI buddy uses for room context
-function addChatMessage(name, text, mine, isAI){
-  const log = document.getElementById('chat-log');
-  if (!log) return;
-  const div = document.createElement('div');
-  div.className = 'msg' + (isAI ? ' ai' : '');
-  const color = isAI ? 'var(--violet)' : (mine ? 'var(--gold)' : nameColor(name));
-  div.innerHTML = `<div class="who" style="color:${color}">${escapeHtml(name)}</div><div class="txt">${escapeHtml(text)}</div>`;
-  log.appendChild(div);
-  log.scrollTop = log.scrollHeight;
-
-  recentChatLog.push({ name, text });
-  if (recentChatLog.length > 15) recentChatLog.shift();
-}
-
-function addSystemMessage(text){
-  const log = document.getElementById('chat-log');
-  if (!log) return;
-  const div = document.createElement('div');
-  div.className = 'msg system';
-  div.textContent = text;
-  log.appendChild(div);
-  log.scrollTop = log.scrollHeight;
-}
-
 // ---------- Orbit (participant avatars) ----------
 function renderOrbit(){
   const orbit = document.getElementById('orbit');
@@ -386,6 +344,8 @@ function renderOrbit(){
     if (speakingState[id]) av.classList.add('speaking');
     const badge = document.createElement('div'); badge.className='mic-badge'; badge.textContent = p.muted===false ? '🎤' : '·';
     av.appendChild(badge);
+    av.style.cursor = 'pointer';
+    av.addEventListener('click', ()=>{ if (typeof openProfileForPeer === 'function') openProfileForPeer(id); });
     const nm = document.createElement('div'); nm.className='avatar-name'; nm.textContent = (id===myId ? 'You' : p.name);
     wrap.appendChild(av); wrap.appendChild(nm); orbit.appendChild(wrap);
   });

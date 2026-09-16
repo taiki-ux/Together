@@ -157,6 +157,7 @@
         <button class="nav-btn" data-mode="chat">🗨️ Chat</button>
         <button class="nav-btn" data-mode="talk">📞 Talk</button>
         <button class="nav-btn" data-mode="playlist">⭐ Playlist</button>
+        <button class="nav-btn" data-mode="profile">👤 Profile</button>
       </div>
       <div class="topbar-right">
         <div class="roomcode-pill">
@@ -180,7 +181,7 @@
            <div id="yt-player-video"></div>
            <div class="video-placeholder" id="video-placeholder">
              <div class="glow">▶</div>
-             <div>Paste a YouTube link below to start the night</div>
+             <div>Search or paste a YouTube link below to start the night</div>
            </div>
            <div class="reaction-layer" id="reaction-layer-video"></div>
          </div>
@@ -192,17 +193,32 @@
            <button class="reaction-btn" data-emoji="🔥" type="button">🔥</button>
          </div>
 
-          <div class="load-row">
-           <input type="text" id="input-music-url" placeholder="Paste a YouTube or Spotify link…">
-           <button class="btn btn-violet" id="btn-load-music" type="button">Play now</button>
-           <button class="btn btn-secondary" id="btn-queue-add" type="button">➕ Queue</button>
-           <button class="btn btn-ghost" id="btn-save-music" type="button" title="Save to your playlist">⭐</button>
+          <div class="search-row">
+            <input type="text" id="input-video-search" placeholder="🔍 Search YouTube…">
+            <button class="btn btn-violet" id="btn-video-search" type="button">Search</button>
+          </div>
+          <div class="search-results" id="video-search-results"></div>
+          <button class="link-toggle" id="btn-video-paste-toggle" type="button">or paste a link instead</button>
+          <div class="load-row" id="video-paste-row" style="display:none;">
+           <input type="text" id="input-video-url" placeholder="Paste a YouTube link…">
+           <button class="btn btn-secondary" id="btn-load-video" type="button">Play now</button>
+           <button class="btn btn-violet" id="btn-queue-add-video" type="button">➕ Queue</button>
+           <button class="btn btn-ghost" id="btn-save-video" type="button" title="Save to your playlist">⭐</button>
           </div>
 
           <div class="queue-section">
-           <h4 class="queue-heading">🎶 Up Next</h4>
-           <div id="queue-list" class="queue-list"></div>
+            <div class="queue-header">
+              <h4 class="queue-heading">🎬 Up Next</h4>
+              <div class="queue-controls">
+                <button class="icon-btn" id="btn-queue-shuffle-video" type="button" title="Shuffle">🔀</button>
+                <button class="icon-btn" id="btn-queue-prev-video" type="button" title="Previous">⏮</button>
+                <button class="icon-btn" id="btn-queue-next-video" type="button" title="Next">⏭</button>
+                <button class="icon-btn" id="btn-queue-repeat-video" type="button" title="Repeat">🔁</button>
+              </div>
+            </div>
+            <div id="queue-list-video" class="queue-list"></div>
           </div>
+
           <div class="controls-row">
             <button class="btn btn-ghost btn-sm" id="btn-play-video">▶ Play</button>
             <button class="btn btn-ghost btn-sm" id="btn-pause-video">⏸ Pause</button>
@@ -230,7 +246,6 @@
             <div class="music-yt" id="yt-player-music"></div>
           </div>
 
-           <div class="reaction-layer" id="reaction-layer-video"></div>
          <div class="reaction-bar">
            <button class="reaction-btn" data-emoji="😂" type="button">😂</button>
            <button class="reaction-btn" data-emoji="❤️" type="button">❤️</button>
@@ -239,16 +254,30 @@
            <button class="reaction-btn" data-emoji="🔥" type="button">🔥</button>
          </div>
 
-          <div class="load-row">
+          <div class="search-row">
+            <input type="text" id="input-music-search" placeholder="🔍 Search YouTube…">
+            <button class="btn btn-violet" id="btn-music-search" type="button">Search</button>
+          </div>
+          <div class="search-results" id="music-search-results"></div>
+          <button class="link-toggle" id="btn-music-paste-toggle" type="button">or paste a link instead</button>
+          <div class="load-row" id="music-paste-row" style="display:none;">
            <input type="text" id="input-music-url" placeholder="Paste a YouTube or Spotify link…">
            <button class="btn btn-violet" id="btn-load-music" type="button">Play now</button>
-           <button class="btn btn-secondary" id="btn-queue-add" type="button">➕ Queue</button>
+           <button class="btn btn-secondary" id="btn-queue-add-music" type="button">➕ Queue</button>
            <button class="btn btn-ghost" id="btn-save-music" type="button" title="Save to your playlist">⭐</button>
           </div>
 
           <div class="queue-section">
-           <h4 class="queue-heading">🎶 Up Next</h4>
-           <div id="queue-list" class="queue-list"></div>
+            <div class="queue-header">
+              <h4 class="queue-heading">🎶 Up Next</h4>
+              <div class="queue-controls">
+                <button class="icon-btn" id="btn-queue-shuffle-music" type="button" title="Shuffle">🔀</button>
+                <button class="icon-btn" id="btn-queue-prev-music" type="button" title="Previous">⏮</button>
+                <button class="icon-btn" id="btn-queue-next-music" type="button" title="Next">⏭</button>
+                <button class="icon-btn" id="btn-queue-repeat-music" type="button" title="Repeat">🔁</button>
+              </div>
+            </div>
+           <div id="queue-list-music" class="queue-list"></div>
           </div>
 
           <div class="controls-row" id="music-sync-controls">
@@ -372,7 +401,10 @@
           <h3 class="games-heading">🎙 Talk</h3>
           <p class="hint">Voice works from any page — this is just the focused view.</p>
           <div class="talk-grid" id="talk-grid"></div>
-          <button class="talk-mic-btn" id="btn-mic-talk" type="button">🎤 Join voice</button>
+          <div class="talk-controls-row">
+            <button class="talk-mic-btn" id="btn-mic-talk" type="button">🎤 Join voice</button>
+            <button class="icon-btn talk-deafen-btn" id="btn-deafen-talk" type="button" title="Deafen">🔊</button>
+          </div>
         </div>
 
         <!-- PLAYLIST -->
@@ -388,6 +420,11 @@
           </div>
         </div>        
 
+        <!-- PROFILE -->
+        <div class="pane" id="pane-profile">
+          <div id="profile-view"></div>
+        </div>
+
       </div>
 
       <div class="side-col">
@@ -396,6 +433,7 @@
           <div class="orbit" id="orbit"></div>
           <div class="mic-row">
             <button class="btn btn-secondary btn-sm" id="btn-mic" style="flex:1;">🎤 Join voice</button>
+            <button class="icon-btn" id="btn-deafen" type="button" title="Deafen">🔊</button>
           </div>
           <div id="chat-toggle-wrap">
                 <button class="btn btn-ghost btn-sm btn-block" id="btn-chat-toggle">💬 Open chat</button>
@@ -405,7 +443,11 @@
               <div class="chat-col" id="chat-col">
                 <div class="chat-log" id="chat-log"></div>
                 <p class="typing-indicator-text" id="typing-indicator"></p>
-                <p class="chat-hint">Tip: mention <b>@ai</b> for a joke, a movie pick, or a song pick.</p>
+                <p class="chat-hint">Tip: mention <b>@Buddy</b> for a joke, a movie pick, or a song pick. Press and hold a message for more options.</p>
+                <div class="compose-context-bar" id="compose-context-bar" style="display:none;">
+                  <span class="compose-context-label" id="compose-context-label"></span>
+                  <button class="icon-btn" id="btn-cancel-compose-context" type="button">✕</button>
+                </div>
                 <div class="chat-input-row">
                  <input type="text" id="input-chat" placeholder="Say something…" maxlength="500">
                  <button class="btn btn-primary" id="btn-send">Send</button>
@@ -437,6 +479,8 @@
       <div><div class="lbl">Microphone</div><div class="desc">Choose which mic to use for voice</div></div>
     </div>
     <select id="select-mic" style="margin:6px 0 4px;"></select>
+    <button class="btn btn-ghost btn-block btn-sm" id="btn-mic-test" type="button" style="margin-bottom:6px;">🎚 Test microphone</button>
+    <div class="mic-test-meter-track"><div class="mic-test-meter-fill" id="mic-test-meter"></div></div>
 
     <div class="settings-row">
       <div><div class="lbl">Chat sound</div><div class="desc">Play a sound for new messages</div></div>
@@ -445,6 +489,14 @@
     <div class="settings-row">
       <div><div class="lbl">Auto-sync</div><div class="desc">Automatically correct drift for video &amp; music</div></div>
       <div class="toggle on" id="toggle-autosync"></div>
+    </div>
+    <div class="settings-row">
+      <div><div class="lbl">Auto-join voice</div><div class="desc">Connect to voice as soon as you enter a room</div></div>
+      <div class="toggle on" id="toggle-autojoin-voice"></div>
+    </div>
+    <div class="settings-row">
+      <div><div class="lbl">Push-to-talk</div><div class="desc">Hold the mic button to talk, instead of toggling it on/off</div></div>
+      <div class="toggle" id="toggle-push-to-talk"></div>
     </div>
 
     <div class="settings-roadmap">
@@ -468,8 +520,14 @@
 
 <!-- Feature modules (depends on config) -->
 <script src="peer-manager.js"></script>
+<script src="voice.js"></script>
+<script src="chat.js"></script>
 <script src="rooms.js"></script>
 <script src="youtube-sync.js"></script>
+<script src="youtube-search.js"></script>
+<script src="queue.js"></script>
+<script src="activity-log.js"></script>
+<script src="profile.js"></script>
 <script src="music-player.js"></script>
 <script src="playlists.js"></script>
 <script src="games.js"></script>

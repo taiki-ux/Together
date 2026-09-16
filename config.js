@@ -10,3 +10,4 @@
 const SUPABASE_URL = 'https://jeeqbiavdxidlitufnhf.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImplZXFiaWF2ZHhpZGxpdHVmbmhmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyMTk3NzcsImV4cCI6MjEwMzc5NTc3N30.BMgFxwJ9A8NZKLQy159dk-VmiqmWyKnIl2o3w50OTjQ';
 const AI_FUNCTION_URL = `${SUPABASE_URL}/functions/v1/ai-buddy`;
+const YOUTUBE_SEARCH_URL = `${SUPABASE_URL}/functions/v1/youtube-search`;

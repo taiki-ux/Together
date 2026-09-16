@@ -1,10 +1,28 @@
 /* ============================================================
    YOUTUBE-SYNC.JS
-   A small "channel" abstraction so the exact same synced-playback
-   engine can drive both the Video pane and the Music pane without
-   the two ever fighting over one player. Each channel keeps its
-   own player, ready flag, current video id, and echo-suppression
-   flag; broadcast/receive messages carry a `channel` field.
+   Room Playback State model (Phase 0 rebuild).
+
+   Each channel (video/music) keeps ONE authoritative state —
+   { currentId, playing, position, lastUpdated, controller } —
+   instead of broadcasting individual play/pause/seek/heartbeat
+   messages and hoping everyone converges on the same thing.
+
+   Whoever last took a playback action (pressed Play, Pause,
+   Seek, loaded something new) becomes that channel's controller
+   and stamps the update with lastUpdated = Date.now(). Peers
+   only apply an incoming update if it's newer than the one they
+   already have. That single rule is what stops two people's
+   Play/Pause from fighting each other forever — the room always
+   converges on whichever action actually happened last, instead
+   of both sides re-broadcasting in response to one another.
+
+   Only the current controller sends the periodic drift-correction
+   heartbeat (and only while actually playing) — not everyone
+   whose local player happens to be playing — which also cuts
+   down on unnecessary network chatter in bigger rooms.
+
+   Local YT.Player instances are NOT the synced state — they're
+   just kept in step with it.
    ============================================================ */
 
 let ytApiReady = false;
@@ -14,8 +32,10 @@ document.head.appendChild(ytTag);
 window.onYouTubeIframeAPIReady = function(){ ytApiReady = true; };
 
 const YTChannels = {
-  video: { containerId:'yt-player-video', player:null, ready:false, currentId:null, suppress:false },
-  music: { containerId:'yt-player-music', player:null, ready:false, currentId:null, suppress:false }
+  video: { containerId:'yt-player-video', player:null, ready:false, suppress:false,
+           currentId:null, playing:false, position:0, lastUpdated:0, controller:null },
+  music: { containerId:'yt-player-music', player:null, ready:false, suppress:false,
+           currentId:null, playing:false, position:0, lastUpdated:0, controller:null }
 };
 
 function extractVideoId(input){
@@ -34,9 +54,14 @@ function parseTimeInput(str){
   return secs;
 }
 
+// Where playback SHOULD be right now, given a state snapshot and however
+// long it's been since that snapshot was taken.
+function ytEstimatePosition(c){
+  return c.playing ? c.position + (Date.now() - c.lastUpdated)/1000 : c.position;
+}
+
 function ytEnsurePlayerAndLoad(ch, videoId, startTime){
   const c = YTChannels[ch];
-  c.currentId = videoId;
   if (window.onChannelLoading) window.onChannelLoading(ch, videoId);
   if (!ytApiReady || typeof YT==='undefined'){ setTimeout(()=>ytEnsurePlayerAndLoad(ch,videoId,startTime),300); return; }
   if (!c.player){
@@ -44,98 +69,125 @@ function ytEnsurePlayerAndLoad(ch, videoId, startTime){
       videoId: videoId,
       playerVars:{ rel:0, playsinline:1 },
       events:{
-        onReady: ()=>{ c.ready=true; if (typeof startTime!=='undefined') c.player.seekTo(startTime,true); },
+        onReady: ()=>{
+          c.ready = true;
+          if (typeof startTime==='number' && startTime>0) c.player.seekTo(startTime,true);
+          // A new player defaults to autoplaying — respect the room's actual
+          // state instead (matters most for late joiners landing on a paused room).
+          if (!c.playing) c.player.pauseVideo();
+        },
         onStateChange: (e)=>ytOnStateChange(ch,e)
       }
     });
   } else {
-    c.player.loadVideoById(videoId, (typeof startTime!=='undefined')?startTime:0);
+    c.player.loadVideoById(videoId, (typeof startTime==='number')?startTime:0);
   }
 }
+
 function ytOnStateChange(ch,e){
   const c = YTChannels[ch];
   if (window.onChannelStateChange) window.onChannelStateChange(ch, e.data);
-  if (c.suppress || !window.YT) return;
-  if (e.data === YT.PlayerState.PLAYING) ytBroadcast(ch,{action:'play', time:c.player.getCurrentTime()});
-  else if (e.data === YT.PlayerState.PAUSED) ytBroadcast(ch,{action:'pause', time:c.player.getCurrentTime()});
+  if (c.suppress) return; // echo of our own action or a remotely-applied update — already handled
+  if (e.data === YT.PlayerState.PLAYING) ytSetState(ch, { playing:true, position:c.player.getCurrentTime() }, true);
+  else if (e.data === YT.PlayerState.PAUSED) ytSetState(ch, { playing:false, position:c.player.getCurrentTime() }, true);
 }
-function ytBroadcast(ch,payload){
-  payload.type='video'; payload.channel=ch; payload.videoId = YTChannels[ch].currentId;
-  broadcast(payload);
-}
-function ytApplyRemoteCommand(ch,data){
+
+// The single place that updates local state AND broadcasts it.
+function ytSetState(ch, partial, claimController){
   const c = YTChannels[ch];
+  Object.assign(c, partial);
+  c.lastUpdated = Date.now();
+  if (claimController && typeof myId !== 'undefined' && myId) c.controller = myId;
+  broadcast({ type:'video', channel:ch, action:'state',
+    currentId:c.currentId, playing:c.playing, position:c.position,
+    lastUpdated:c.lastUpdated, controller:c.controller });
+}
+
+function ytApplyRemoteState(ch, data){
+  const c = YTChannels[ch];
+  if (data.lastUpdated <= c.lastUpdated) return; // stale or duplicate — we already have something newer
+
+  const videoChanged = data.currentId !== c.currentId;
+  c.currentId = data.currentId; c.playing = data.playing; c.position = data.position;
+  c.lastUpdated = data.lastUpdated; c.controller = data.controller;
+  if (!data.currentId) return;
+
   c.suppress = true;
-  if (data.action==='load'){
-    ytEnsurePlayerAndLoad(ch, data.videoId, data.time||0);
-  } else if (data.action==='play'){
-    if (!c.player) ytEnsurePlayerAndLoad(ch, data.videoId, data.time||0);
-    else { c.player.seekTo(data.time,true); c.player.playVideo(); }
-  } else if (data.action==='pause'){
-    if (c.player){ c.player.seekTo(data.time,true); c.player.pauseVideo(); }
-  } else if (data.action==='sync'){
-    if (!c.player) ytEnsurePlayerAndLoad(ch, data.videoId, data.time||0);
-    else { c.player.seekTo(data.time,true); data.state==='playing' ? c.player.playVideo() : c.player.pauseVideo(); }
-  } else if (data.action==='seek'){
-    if (c.player) c.player.seekTo(data.time,true);
-  } else if (data.action==='heartbeat'){
-    if (!window.autoSyncOn){ c.suppress=false; return; }
-    if (c.player && c.ready){
-      const localTime = c.player.getCurrentTime();
-      const drift = Math.abs(localTime - data.time);
-      const localPlaying = c.player.getPlayerState()===1;
-      const remotePlaying = data.state==='playing';
-      if (drift > 1.5) c.player.seekTo(data.time, true);
-      if (localPlaying !== remotePlaying) remotePlaying ? c.player.playVideo() : c.player.pauseVideo();
-    } else { c.suppress=false; return; }
+  const targetPosition = ytEstimatePosition(c);
+  if (!c.player || videoChanged){
+    ytEnsurePlayerAndLoad(ch, data.currentId, targetPosition);
+  } else {
+    const localTime = c.player.getCurrentTime();
+    if (Math.abs(localTime - targetPosition) > 1.5) c.player.seekTo(targetPosition, true);
+    const localPlaying = c.player.getPlayerState()===1;
+    if (localPlaying !== c.playing) c.playing ? c.player.playVideo() : c.player.pauseVideo();
   }
   setTimeout(()=>{ c.suppress=false; }, 900);
 }
-registerHandler('video', (fromId, data)=> ytApplyRemoteCommand(data.channel, data));
+registerHandler('video', (fromId, data)=>{ if (data.action==='state') ytApplyRemoteState(data.channel, data); });
 
-// New joiners get the current state of whichever channels are loaded
+// New joiners get a direct, freshly-timestamped snapshot of whatever's
+// currently loaded — not a broadcast, so it doesn't affect anyone else's state.
 if (typeof window !== 'undefined'){
   window.onPeerConnected = (function(prev){
     return function(peerId){
       if (prev) prev(peerId);
       ['video','music'].forEach(ch=>{
         const c = YTChannels[ch];
-        if (c.currentId){
-          sendData(dataConns[peerId], {type:'video', channel:ch, action:'sync', videoId:c.currentId,
-            time: c.player ? c.player.getCurrentTime() : 0,
-            state: (c.player && c.player.getPlayerState()===1) ? 'playing':'paused'});
-        }
+        if (!c.currentId) return;
+        sendData(dataConns[peerId], { type:'video', channel:ch, action:'state',
+          currentId:c.currentId, playing:c.playing, position:ytEstimatePosition(c),
+          lastUpdated:Date.now(), controller:c.controller });
       });
     };
   })(window.onPeerConnected);
 }
 
-// Auto-sync heartbeat: whoever is playing quietly broadcasts position every few seconds
+// Drift-correction heartbeat — only the controller sends it, and only while playing.
 setInterval(()=>{
   ['video','music'].forEach(ch=>{
     const c = YTChannels[ch];
     if (!c.player || !c.ready || !c.currentId) return;
-    const state = c.player.getPlayerState();
-    if (state!==1 && state!==2) return;
-    ytBroadcast(ch, {action:'heartbeat', time:c.player.getCurrentTime(), state: state===1?'playing':'paused'});
+    if (typeof myId==='undefined' || c.controller !== myId || !c.playing) return;
+    ytSetState(ch, { position: c.player.getCurrentTime() }, false);
   });
 }, 5000);
 
 // ---------- Public actions used by app.js ----------
 const YTSync = {
-  load(ch, videoId){ ytEnsurePlayerAndLoad(ch, videoId, 0); ytBroadcast(ch, {action:'load', videoId, time:0}); },
-  play(ch){ const c=YTChannels[ch]; c.player && c.player.playVideo(); },
-  pause(ch){ const c=YTChannels[ch]; c.player && c.player.pauseVideo(); },
+  load(ch, videoId){
+    const c = YTChannels[ch];
+    c.suppress = true;
+    ytEnsurePlayerAndLoad(ch, videoId, 0);
+    ytSetState(ch, { currentId:videoId, playing:true, position:0 }, true);
+    setTimeout(()=>{ c.suppress=false; }, 900);
+  },
+  play(ch){
+    const c = YTChannels[ch];
+    c.suppress = true;
+    if (c.player) c.player.playVideo();
+    ytSetState(ch, { playing:true, position: c.player ? c.player.getCurrentTime() : c.position }, true);
+    setTimeout(()=>{ c.suppress=false; }, 900);
+  },
+  pause(ch){
+    const c = YTChannels[ch];
+    c.suppress = true;
+    if (c.player) c.player.pauseVideo();
+    ytSetState(ch, { playing:false, position: c.player ? c.player.getCurrentTime() : c.position }, true);
+    setTimeout(()=>{ c.suppress=false; }, 900);
+  },
   syncToMe(ch){
-    const c=YTChannels[ch]; if (!c.player || !c.currentId) return;
-    ytBroadcast(ch, {action:'sync', time:c.player.getCurrentTime(), state:c.player.getPlayerState()===1?'playing':'paused'});
+    const c = YTChannels[ch]; if (!c.player || !c.currentId) return;
+    ytSetState(ch, { position: c.player.getCurrentTime() }, true);
   },
   seek(ch, inputStr){
-    const c=YTChannels[ch]; if (!c.player) return false;
+    const c = YTChannels[ch]; if (!c.player) return false;
     const secs = parseTimeInput(inputStr);
     if (secs===null) return false;
+    c.suppress = true;
     c.player.seekTo(secs,true);
-    ytBroadcast(ch, {action:'seek', time:secs});
+    ytSetState(ch, { position: secs }, true);
+    setTimeout(()=>{ c.suppress=false; }, 900);
     return true;
   }
 };

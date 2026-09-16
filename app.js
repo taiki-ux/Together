@@ -85,6 +85,7 @@ function enterAppAsUser(){
   }
   
   myName = myProfile.username || 'User';
+  if (typeof startGlobalPresence === 'function' && currentUser) startGlobalPresence(currentUser.id);
   document.getElementById('screen-auth').style.display='none';
   document.getElementById('screen-landing').style.display='flex';
   document.getElementById('screen-room').style.display='none';
@@ -151,6 +152,7 @@ window.onPeerReady = function(){
   document.getElementById('entry-room-code').textContent = shortCode(roomCode);
   document.getElementById('input-rename').value = myName;
   addSystemMessage(isHost ? `Room created. Share the code "${roomCode}" with your friends.` : `You joined "${roomCode}".`);
+  if (typeof autoJoinVoiceIfEnabled === 'function') autoJoinVoiceIfEnabled();
 };
 document.getElementById('entry-btn-copy').addEventListener('click', copyRoomCode);
 document.getElementById('btn-copy').addEventListener('click', copyRoomCode);
@@ -304,12 +306,15 @@ function renderTalkGrid(){
      const av = document.createElement('div'); av.className = 'avatar talk-avatar'; av.dataset.peer = id;     
      av.style.background = nameColor(p.name || '?'); av.textContent = initials(p.name);     
      if (speakingState[id]) av.classList.add('speaking');     
+     av.style.cursor = 'pointer';
+     av.addEventListener('click', ()=>{ if (typeof openProfileForPeer === 'function') openProfileForPeer(id); });
      tile.appendChild(av);     
      const nm = document.createElement('div'); nm.className = 'talk-name'; nm.textContent = (id === myId ? 'You' : p.name);     
      tile.appendChild(nm);     
      const micState = document.createElement('div'); micState.className = 'talk-mic-state';     
      micState.textContent = p.muted === false ? '🎤 On' : '🔇 Off';     
      tile.appendChild(micState);     
+     if (typeof buildVoiceControlsForTile === 'function') tile.appendChild(buildVoiceControlsForTile(id));
      grid.appendChild(tile);
    }); 
 }
@@ -335,11 +340,6 @@ window.onChannelLoading = (function(prev){
   };
 })(window.onChannelLoading);
 
-document.getElementById('btn-load-video').addEventListener('click', ()=>{
-  const id = extractVideoId(document.getElementById('input-video-url').value);
-  if (!id){ toast("Couldn't find a video in that link — paste a full YouTube URL or ID"); return; }
-  YTSync.load('video', id);
-});
 document.getElementById('btn-play-video').addEventListener('click', ()=>YTSync.play('video'));
 document.getElementById('btn-pause-video').addEventListener('click', ()=>YTSync.pause('video'));
 document.getElementById('btn-sync-video').addEventListener('click', ()=>YTSync.syncToMe('video'));
@@ -361,26 +361,6 @@ document.getElementById('btn-fullscreen').addEventListener('click', async ()=>{
   }
 });
 
-document.getElementById('btn-load-music').addEventListener('click', ()=>{
-  const raw = document.getElementById('input-music-url').value;
-  const res = musicLoadFromInput(raw);
-  if (!res.ok){ toast(res.message, 'err'); return; }
-  // "Play now" replaces the whole queue with just this track, synced to everyone.
-  const id = extractVideoId(raw);
-  musicQueue = [{ id: 'q'+Date.now()+Math.random().toString(36).slice(2,7), videoId:id, title:raw.trim(), addedBy: myName }];
-  queueVotes = {};
-  renderQueue();
-  broadcast({ type:'queue', action:'sync', queue: musicQueue, votes: queueVotes });
-});
-document.getElementById('btn-queue-add').addEventListener('click', ()=>{
-  const raw = document.getElementById('input-music-url').value.trim();
-  const id = extractVideoId(raw);
-  if (!id){ toast("Couldn't find a track in that link", 'err'); return; }
-  queueAddTrack(id, raw);
-  document.getElementById('input-music-url').value = '';
-  toast('Added to queue 🎶', 'ok');
-});
-
 document.getElementById('btn-play-music').addEventListener('click', ()=>YTSync.play('music'));
 document.getElementById('btn-pause-music').addEventListener('click', ()=>YTSync.pause('music'));
 document.getElementById('btn-sync-music').addEventListener('click', ()=>YTSync.syncToMe('music'));
@@ -394,6 +374,7 @@ document.getElementById('input-local-file').addEventListener('change', function(
 });
 
 async function toggleMic(){
+     if (typeof pushToTalkOn !== 'undefined' && pushToTalkOn) return; // press/hold owns mic state in this mode
      if (!micOn){
          try{
             if (!localStream){ localStream = await acquireMicStream(); attachSpeakingDetector(localStream, myId); }
@@ -418,15 +399,16 @@ async function toggleMic(){
 } 
 
 function updateMicButtonsUI(on){
+     const ptt = (typeof pushToTalkOn !== 'undefined' && pushToTalkOn);
      const sidebarBtn = document.getElementById('btn-mic');
      if (sidebarBtn){
-           sidebarBtn.textContent = on ? '🔇 Leave voice' : '🎤 Join voice';
+           sidebarBtn.textContent = ptt ? (localStream ? (on ? '🎤 Talking…' : '🎤 Hold to talk') : '🎤 Join voice') : (on ? '🔇 Leave voice' : '🎤 Join voice');
            sidebarBtn.classList.toggle('btn-secondary', !on);
            sidebarBtn.classList.toggle('btn-ghost', on);
       }
      const talkBtn = document.getElementById('btn-mic-talk');
      if (talkBtn){
-           talkBtn.textContent = on ? '🔇 Leave voice' : '🎤 Join voice';
+           talkBtn.textContent = ptt ? (localStream ? (on ? '🎤 Talking…' : '🎤 Hold to talk') : '🎤 Join voice') : (on ? '🔇 Leave voice' : '🎤 Join voice');
            talkBtn.classList.toggle('on', on);
       } 
 } 
@@ -456,36 +438,6 @@ async function callAiFunction(payload, attempt){
 
 document.getElementById('btn-mic').addEventListener('click', toggleMic);
 document.getElementById('btn-mic-talk').addEventListener('click', toggleMic);
-document.getElementById('btn-send').addEventListener('click', sendChatFromInput);
-document.getElementById('input-chat').addEventListener('keydown', e=>{ if(e.key==='Enter') sendChatFromInput(); });
-
-
-let myTypingActive = false;
-let myTypingTimeout = null;
-document.getElementById('input-chat').addEventListener('input', ()=>{
-  if (!myTypingActive){
-    myTypingActive = true;
-    broadcast({ type:'typing', name: myName, state:'start' });
-  }
-  clearTimeout(myTypingTimeout);
-  myTypingTimeout = setTimeout(()=>{
-    myTypingActive = false;
-    broadcast({ type:'typing', name: myName, state:'stop' });
-  }, 2000);
-});
-
-function sendChatFromInput(){
-  const input = document.getElementById('input-chat');
-  const text = input.value.trim();
-  if (!text) return;
-  clearTimeout(myTypingTimeout);
-  if (myTypingActive){ myTypingActive = false; broadcast({ type:'typing', name: myName, state:'stop' }); }
-  sendChatMessage(myName, text, false);
-  input.value = '';
-  if (/(?:^|\s)@ai(?:\s|$)/i.test(text)) respondAsAI(text);
-}
-
-const AI_JOKES = [
   "Why don't scientists trust atoms? Because they make up everything.",
   "I told my WiFi I loved it. It said the connection isn't stable.",
   "Why did the scarecrow win an award? He was outstanding in his field.",
@@ -494,7 +446,7 @@ const AI_JOKES = [
   "I used to be a banker, but I lost interest.",
   "Parallel lines have so much in common. It's a shame they'll never meet.",
   "Why did the video call freeze? It saw the WiFi bill."
-];
+;
 const AI_FILLERS = [
   "Haha, love the energy in here! 🎉",
   "I'm just a lightweight joke-bot for now — ask me for a joke, a movie, or a song! 🎬🎵",
@@ -505,14 +457,43 @@ function buildRoomContext(){
   const recentMessages = recentChatLog.slice(-8).map(m=> `${m.name}: ${m.text}`).join('\n');
   const nowWatching = YTChannels.video.currentId ? (document.getElementById('input-video-url').value.trim() || YTChannels.video.currentId) : null;
   const nowPlaying = YTChannels.music.currentId ? (document.getElementById('input-music-url').value.trim() || YTChannels.music.currentId) : null;
-  return { recentMessages, nowWatching, nowPlaying };
+  return { recentMessages, nowWatching, nowPlaying, activeGame: getActiveGameSummary() };
 }
 
+// Peeks at whichever .game-panel is currently visible instead of games.js
+// having to push its state here — keeps the game files untouched.
+function getActiveGameSummary(){
+  const panels = document.querySelectorAll('.game-panel');
+  for (const panel of panels){
+    if (panel.style.display === 'block'){
+      const label = panel.id.replace('game-','');
+      const prompt = panel.querySelector('.quiz-question, .draft-category');
+      return prompt ? `Playing ${label}: "${prompt.textContent.trim()}"` : `Playing ${label}`;
+    }
+  }
+  return null;
+}
+
+let lastBuddyCallAt = 0;
+const BUDDY_COOLDOWN_MS = 8000;
+
 async function respondAsAI(triggerText){
+  const now = Date.now();
+  if (now - lastBuddyCallAt < BUDDY_COOLDOWN_MS){
+    toast('🤖 Buddy needs a sec before you ask again');
+    return;
+  }
+  lastBuddyCallAt = now;
+
   let reply = null;
   showBuddyTyping(true);
   try{
-    const json = await callAiFunction({ message: triggerText, context: buildRoomContext() });
+    const json = await callAiFunction({ message: triggerText, context: buildRoomContext(), callerId: myId });
+    if (json.error === 'RATE_LIMITED'){
+      showBuddyTyping(false);
+      toast("🤖 Buddy's getting a lot of requests right now — give it a moment");
+      return;
+    }
     reply = json.reply;
     if (!reply) throw new Error('AI returned an empty reply');
   }catch(e){

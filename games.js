@@ -109,9 +109,17 @@ document.getElementById('btn-trivia-start').addEventListener('click', ()=> trivi
 document.getElementById('btn-wyr-start').addEventListener('click', ()=> wyrNext(true));
 document.getElementById('btn-tot-start').addEventListener('click', ()=> totNext(true));
 document.getElementById('btn-woa-start').addEventListener('click', ()=> woaNext(true));
+function gameNameForPanel(id){
+  for (const cat of GAME_CATALOG){
+    const g = cat.games.find(g=> g.panelId === id);
+    if (g) return g.name;
+  }
+  return id;
+}
 function openGame(id){
   document.getElementById('category-detail').style.display='none';
   document.getElementById('game-'+id).style.display='block';
+  if (typeof logActivity === 'function') logActivity('game', id, gameNameForPanel(id));
 }
 function closeGame(){
   document.getElementById('category-detail').style.display='block';
@@ -141,7 +149,7 @@ let askedTriviaQuestions = [];
 
 async function fetchAiTriviaQuestion(){
   try{
-    const json = await callAiFunction({ mode:'trivia', askedQuestions: askedTriviaQuestions.slice(-15) });
+    const json = await callAiFunction({ mode:'trivia', askedQuestions: askedTriviaQuestions.slice(-15), callerId: myId });
     const t = json.trivia;
     if (t && typeof t.question === 'string' && Array.isArray(t.choices) && t.choices.length === 4 && typeof t.correctIndex === 'number'){
       return { q: t.question, choices: t.choices, correct: t.correctIndex };
