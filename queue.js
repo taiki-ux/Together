@@ -164,6 +164,16 @@ window.onChannelStateChange = (function(prev){
   };
 })(window.onChannelStateChange);
 
+// A track that fails to play (e.g. embedding disabled — common on official
+// music videos) shouldn't leave the room stuck staring at a broken player.
+window.onChannelError = (function(prev){
+  return function(ch, message){
+    if (prev) prev(ch, message);
+    toast(`${ch === 'music' ? '🎵' : '🎬'} ${message}`, 'err');
+    if (isQueueLeader() && MediaQueues[ch].items.length) nextTrack(ch);
+  };
+})(window.onChannelError);
+
 // ---------- Rendering ----------
 function renderQueueUI(ch){
   const el = document.getElementById('queue-list-' + ch);

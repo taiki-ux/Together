@@ -76,7 +76,8 @@ function ytEnsurePlayerAndLoad(ch, videoId, startTime){
           // state instead (matters most for late joiners landing on a paused room).
           if (!c.playing) c.player.pauseVideo();
         },
-        onStateChange: (e)=>ytOnStateChange(ch,e)
+        onStateChange: (e)=>ytOnStateChange(ch,e),
+        onError: (e)=>ytOnError(ch,e)
       }
     });
   } else {
@@ -90,6 +91,23 @@ function ytOnStateChange(ch,e){
   if (c.suppress) return; // echo of our own action or a remotely-applied update — already handled
   if (e.data === YT.PlayerState.PLAYING) ytSetState(ch, { playing:true, position:c.player.getCurrentTime() }, true);
   else if (e.data === YT.PlayerState.PAUSED) ytSetState(ch, { playing:false, position:c.player.getCurrentTime() }, true);
+}
+
+// YouTube error codes: 2=invalid id, 5=HTML5 player error, 100=removed/private,
+// 101 & 150=embedding disabled by the video's owner (very common on official
+// music videos specifically — this is the #1 real-world reason "music won't
+// play" while random video content works fine).
+function ytOnError(ch, e){
+  const messages = {
+    2: "That link doesn't point to a valid video.",
+    5: "This player can't play that video.",
+    100: "That video was removed or is private.",
+    101: "The video's owner doesn't allow it to be played in embedded players like this one.",
+    150: "The video's owner doesn't allow it to be played in embedded players like this one."
+  };
+  const message = messages[e.data] || "That video can't be played here.";
+  if (window.onChannelError) window.onChannelError(ch, message);
+  else console.error(`YouTube player error on ${ch}:`, message);
 }
 
 // The single place that updates local state AND broadcasts it.

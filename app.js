@@ -121,12 +121,13 @@ document.getElementById('btn-create').addEventListener('click', ()=>{
   showLandingStatus('Opening your room…');
   initPeer();
 });
-document.getElementById('btn-join').addEventListener('click', ()=>{
+document.getElementById('btn-join').addEventListener('click', async ()=>{
   const code = roomInput.value.trim().toLowerCase();
   if (!code){ showLandingStatus("Enter the room code your friend sent you.", true); return; }
   roomCode = code; isHost = false;
   setLandingLoading(true);
   showLandingStatus('Joining…');
+  requireApproval = await resolveRequireApproval(code);
   initPeer();
 });
 function setLandingLoading(loading){
@@ -201,6 +202,11 @@ document.getElementById('entry-btn-leave').addEventListener('click', leaveRoom);
 document.getElementById('btn-leave').addEventListener('click', leaveRoom);
 
 document.querySelectorAll('.hub-card').forEach(c=> c.addEventListener('click', ()=> enterActivity(c.dataset.mode, true)));
+document.getElementById('btn-back-to-hub').addEventListener('click', ()=>{
+  document.getElementById('activity-shell').style.display='none';
+  document.getElementById('entry-hub').style.display='flex';
+  window.scrollTo(0,0);
+});
 
 let isEnteringActivity = false;
 
@@ -243,6 +249,17 @@ const pane = document.getElementById('pane-'+mode);
 if (pane) pane.classList.add('active');
 document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active', b.dataset.mode===mode));    
 
+// The sidebar (who's here, quick voice toggle, chat drawer) is redundant on
+// Watch/Music/Games now that Chat and Talk are full, dedicated tabs — keep
+// it for everywhere else (Chat/Talk/Profile). Toggling a class on room-body
+// too so the grid actually reclaims the sidebar's column instead of leaving
+// blank space where it used to be.
+const sideCol = document.getElementById('side-col');
+const roomBody = document.querySelector('.room-body');
+const hideSidebar = SHARED_MODES.includes(mode);
+if (sideCol) sideCol.style.display = hideSidebar ? 'none' : '';
+if (roomBody) roomBody.classList.toggle('no-sidebar', hideSidebar);
+
 if (mode === 'chat'){
      mountChatInPage();
      document.getElementById('chat-col').classList.add('open');
@@ -251,16 +268,19 @@ if (mode === 'chat'){
        mountChatInSidebar();
        document.getElementById('chat-toggle-wrap').classList.add('visible');   
 }
-if (mode === 'playlist') renderPlaylistPane();   
+if (mode === 'video') renderPlaylistList('video', 'playlist-video-list-inline');
+if (mode === 'music') renderPlaylistList('music', 'playlist-music-list-inline');
 if (mode === 'talk') renderTalkGrid();    
 
 if (broadcastIt && SHARED_MODES.includes(mode)) broadcast({type:'mode', mode}); 
+// Personal "what am I up to" status — distinct from the shared-mode broadcast
+// above (which syncs the ROOM's Watch/Music/Games view), this just tells
+// everyone what I'm personally looking at, for the hub presence list.
+if (participants[myId]) participants[myId].status = mode;
+broadcast({ type:'presence-status', status: mode });
+if (typeof renderHubPresence === 'function') renderHubPresence();
 }
 
-async function renderPlaylistPane(){
-  await renderPlaylistList('video', 'playlist-video-list');
-  await renderPlaylistList('music', 'playlist-music-list');
-}
 async function renderPlaylistList(kind, containerId){
   const el = document.getElementById(containerId);
   if (!el) return;
@@ -275,7 +295,7 @@ async function renderPlaylistList(kind, containerId){
     <div class="playlist-item">
       <span title="${escapeHtml(it.title)}">${escapeHtml(it.title)}</span>
       <span class="playlist-actions">
-        <button class="btn btn-secondary btn-sm" data-load="${it.video_id}" data-kind="${kind}" type="button">▶ Play</button>
+        <button class="btn btn-secondary btn-sm" data-load="${it.video_id}" data-kind="${kind}" data-title="${escapeHtml(it.title)}" type="button">▶ Play</button>
         <button class="icon-btn" data-remove="${it.id}" data-kind="${kind}" type="button" title="Remove">🗑</button>
       </span>
     </div>
@@ -283,7 +303,10 @@ async function renderPlaylistList(kind, containerId){
 
   el.querySelectorAll('[data-load]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
-      YTSync.load(btn.dataset.kind, btn.dataset.load);
+      // Routes through the shared queue (Phase 2), same as search results and
+      // paste-link — keeps every way of loading something consistent.
+      if (typeof playNow === 'function') playNow(btn.dataset.kind, btn.dataset.load, btn.dataset.title);
+      else YTSync.load(btn.dataset.kind, btn.dataset.load);
       setMode(btn.dataset.kind, true); // jump everyone to Watch/Music so they can see/hear it
     });
   });
@@ -438,7 +461,7 @@ async function callAiFunction(payload, attempt){
 
 document.getElementById('btn-mic').addEventListener('click', toggleMic);
 document.getElementById('btn-mic-talk').addEventListener('click', toggleMic);
-  "Why don't scientists trust atoms? Because they make up everything.",
+  ["Why don't scientists trust atoms? Because they make up everything.",
   "I told my WiFi I loved it. It said the connection isn't stable.",
   "Why did the scarecrow win an award? He was outstanding in his field.",
   "I'm reading a book on anti-gravity. It's impossible to put down.",
@@ -446,7 +469,7 @@ document.getElementById('btn-mic-talk').addEventListener('click', toggleMic);
   "I used to be a banker, but I lost interest.",
   "Parallel lines have so much in common. It's a shame they'll never meet.",
   "Why did the video call freeze? It saw the WiFi bill."
-;
+];
 const AI_FILLERS = [
   "Haha, love the energy in here! 🎉",
   "I'm just a lightweight joke-bot for now — ask me for a joke, a movie, or a song! 🎬🎵",

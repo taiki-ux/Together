@@ -20,11 +20,11 @@ function shuffledOrder(len){ const arr=[...Array(len).keys()]; for(let i=arr.len
 // status 'soon'  -> shows a locked card, taps produce a toast
 const GAME_CATALOG = [
   {key:'romance', emoji:'❤️', name:'Romance', games:[
-    {name:'Couples Quiz', status:'soon'}, {name:'Love Questions', status:'soon'}, {name:'Truth or Dare: Couples', status:'ready'}]},
+    {name:'Couples Quiz', status:'soon'}, {name:'Love Questions', status:'soon'}, {name:'Truth or Dare: Couples', status:'ready', panelId:'tod'}]},
   {key:'chill', emoji:'😌', name:'Chill', games:[
-    {name:'Would You Rather', status:'ready', panelId:'wyr'}, {name:'Two Truths & a Lie', status:'ready'}, {name:'20 Questions', status:'soon'}]},
+    {name:'Would You Rather', status:'ready', panelId:'wyr'}, {name:'Two Truths & a Lie', status:'ready', panelId:'ttl'}, {name:'20 Questions', status:'soon'}]},
   {key:'funny', emoji:'😂', name:'Funny & Jokes', games:[
-    {name:'Wrong Answers Only', status:'ready', panelId:'woa'}, {name:'Finish the Sentence', status:'soon'}, {name:'Most Likely To', status:'ready'}]},
+    {name:'Wrong Answers Only', status:'ready', panelId:'woa'}, {name:'Finish the Sentence', status:'soon'}, {name:'Most Likely To', status:'ready', panelId:'mlt'}]},
   {key:'puzzles', emoji:'🧩', name:'Puzzles', games:[
     {name:'Riddles', status:'soon'}, {name:'Word Scramble', status:'soon'}, {name:'Memory Match', status:'soon'}]},
   {key:'mindgames', emoji:'🧠', name:'Mind Games', games:[
@@ -32,7 +32,7 @@ const GAME_CATALOG = [
   {key:'reaction', emoji:'⚡', name:'Reaction & Speed', games:[
     {name:'Reaction Battle', status:'soon'}, {name:'Quick Draw', status:'soon'}, {name:'Fastest Typist', status:'soon'}]},
   {key:'competitive', emoji:'🏆', name:'Competitive', games:[
-    {name:'Tic-Tac-Toe', status:'ready', panelId:'ttt'}, {name:'Connect 4', status:'soon'}, {name:'Battleship', status:'soon'}]},
+    {name:'Tic-Tac-Toe', status:'ready', panelId:'ttt'}, {name:'Connect 4', status:'ready', panelId:'connect4'}, {name:'Battleship', status:'soon'}]},
   {key:'creative', emoji:'🎨', name:'Creative', games:[
     {name:'Draw & Guess', status:'soon'}, {name:'Build Battle', status:'soon'}, {name:'Story Builder', status:'soon'}]},
   {key:'word', emoji:'🔤', name:'Word Games', games:[
@@ -54,9 +54,9 @@ const GAME_CATALOG = [
   {key:'challenge', emoji:'💀', name:'Challenge', games:[
     {name: 'Draft', status:'ready', panelId:'draft'}, {name:'30-Second Challenge', status:'soon'}, {name:'Last Player Standing', status:'soon'}, {name:'Survival Challenge', status:'soon'}]},
   {key:'music', emoji:'🎵', name:'Music', games:[
-    {name:'Guess the Song', status:'soon'}, {name:'Finish the Lyrics', status:'soon'}, {name:'Music Trivia', status:'soon'}]},
+    {name:'Guess the Song', status:'ready', guessCategory:'song'}, {name:'Finish the Lyrics', status:'soon'}, {name:'Music Trivia', status:'soon'}]},
   {key:'movies', emoji:'🎬', name:'Movies & Anime', games:[
-    {name:'Guess the Movie', status:'soon'}, {name:'Anime Quiz', status:'soon'}, {name:'Guess the Character', status:'soon'}]}
+    {name:'Guess the Movie', status:'ready', guessCategory:'movie'}, {name:'Anime Quiz', status:'soon'}, {name:'Guess the Character', status:'ready', guessCategory:'character'}]}
 ];
 
 function readyCount(cat){ return cat.games.filter(g=>g.status==='ready').length; }
@@ -81,7 +81,7 @@ function openCategory(key){
   document.getElementById('category-detail-title').textContent = `${cat.emoji} ${cat.name}`;
   const grid = document.getElementById('category-game-grid');
   grid.innerHTML = cat.games.map(g=>`
-    <div class="game-card ${g.status==='soon'?'locked':''}" data-panel="${g.panelId||''}" data-name="${escapeHtml(g.name)}">
+    <div class="game-card ${g.status==='soon'?'locked':''}" data-panel="${g.panelId||''}" data-guess-category="${g.guessCategory||''}" data-name="${escapeHtml(g.name)}">
       ${g.status==='soon' ? '<span class="lock-badge">🔒</span>' : ''}
       <div class="emoji">${g.status==='ready'?'▶️':'🎮'}</div>
       <h3>${escapeHtml(g.name)}</h3>
@@ -91,7 +91,8 @@ function openCategory(key){
   grid.querySelectorAll('.game-card').forEach(card=>{
     card.addEventListener('click', ()=>{
       if (card.classList.contains('locked')){ toast(`${card.dataset.name} is coming in a future update 🚧`); return; }
-      openGame(card.dataset.panel);
+      if (card.dataset.guessCategory) openGuessGame(card.dataset.guessCategory);
+      else openGame(card.dataset.panel);
     });
   });
 }
@@ -123,7 +124,7 @@ function openGame(id){
 }
 function closeGame(){
   document.getElementById('category-detail').style.display='block';
-  ['trivia','wyr','ttt','tot','woa','ttl','tod','mlt','draft'].forEach(g=> document.getElementById('game-'+g).style.display='none');
+  ['trivia','wyr','ttt','tot','woa','ttl','tod','mlt','draft','connect4','guess'].forEach(g=> document.getElementById('game-'+g).style.display='none');
 }
 
 /* ---------------- Trivia ---------------- */
@@ -447,6 +448,159 @@ function renderTtt(){
   document.getElementById('ttt-leave').addEventListener('click', ()=>{
     tttState = { opponentId:null, opponentName:'', mySymbol:null, board:Array(9).fill(null), myTurn:false, active:false, pendingInvite:null, waitingFor:null };
     renderTtt();
+  });
+}
+
+/* ---------------- Connect Four (Competitive) ---------------- */
+const C4_ROWS = 6, C4_COLS = 7;
+function buildConnect4Lines(){
+  const lines = []; const idx = (r,c)=> r*C4_COLS+c;
+  for (let r=0;r<C4_ROWS;r++) for (let c=0;c<=C4_COLS-4;c++) lines.push([idx(r,c),idx(r,c+1),idx(r,c+2),idx(r,c+3)]);           // horizontal
+  for (let c=0;c<C4_COLS;c++) for (let r=0;r<=C4_ROWS-4;r++) lines.push([idx(r,c),idx(r+1,c),idx(r+2,c),idx(r+3,c)]);           // vertical
+  for (let r=0;r<=C4_ROWS-4;r++) for (let c=0;c<=C4_COLS-4;c++) lines.push([idx(r,c),idx(r+1,c+1),idx(r+2,c+2),idx(r+3,c+3)]);  // diagonal ↘
+  for (let r=3;r<C4_ROWS;r++) for (let c=0;c<=C4_COLS-4;c++) lines.push([idx(r,c),idx(r-1,c+1),idx(r-2,c+2),idx(r-3,c+3)]);     // diagonal ↗
+  return lines;
+}
+const C4_LINES = buildConnect4Lines();
+let c4State = { opponentId:null, opponentName:'', mySymbol:null, board:Array(C4_ROWS*C4_COLS).fill(null), myTurn:false, active:false, pendingInvite:null, waitingFor:null };
+
+function renderC4Opponents(){
+  const list = document.getElementById('connect4-opponent-list');
+  if (!list || c4State.active) return;
+  const others = Object.keys(participants).filter(id=>id!==myId);
+  if (others.length===0){ list.innerHTML = `<p class="hint">No one else is here yet — invite a friend into the room first.</p>`; return; }
+  list.innerHTML = others.map(id=>`
+    <div class="opp-row"><span>${escapeHtml(participants[id].name)}</span><button class="btn btn-ghost btn-sm" data-c4-challenge="${id}">Challenge</button></div>
+  `).join('');
+  list.querySelectorAll('[data-c4-challenge]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const to = btn.dataset.c4Challenge;
+      c4State.waitingFor = to;
+      sendData(dataConns[to], {type:'connect4', action:'invite', to, from:myId, name:myName});
+      renderC4();
+    });
+  });
+}
+window.onOrbitRender = (function(prev){ return function(){ if(prev) prev(); renderC4Opponents(); }; })(window.onOrbitRender);
+
+registerHandler('connect4', (fromId, data)=>{
+  if (data.to !== myId) return;
+  if (data.action==='invite'){
+    c4State.pendingInvite = {from:data.from, name:data.name};
+    renderC4();
+  } else if (data.action==='accept'){
+    c4State = { opponentId:data.from, opponentName:participants[data.from]?.name||'Opponent', mySymbol:'R', board:Array(C4_ROWS*C4_COLS).fill(null), myTurn:true, active:true, pendingInvite:null, waitingFor:null };
+    renderC4();
+  } else if (data.action==='decline'){
+    addSystemMessage(`${participants[data.from]?.name||'They'} declined your Connect 4 challenge`);
+    c4State.waitingFor = null;
+    renderC4();
+  } else if (data.action==='move'){
+    if (data.from !== c4State.opponentId) return;
+    c4State.board[data.cell] = data.symbol;
+    c4State.myTurn = true;
+    renderC4();
+  } else if (data.action==='reset'){
+    if (data.from !== c4State.opponentId) return;
+    c4State.board = Array(C4_ROWS*C4_COLS).fill(null);
+    c4State.myTurn = (c4State.mySymbol==='R');
+    renderC4();
+  }
+});
+window.onPeerRemoved = (function(prev){
+  return function(peerId){
+    if (prev) prev(peerId);
+    if (c4State.opponentId===peerId){ c4State.active=false; renderC4(); }
+  };
+})(window.onPeerRemoved);
+
+function c4Accept(){
+  const inv = c4State.pendingInvite;
+  c4State = { opponentId:inv.from, opponentName:inv.name, mySymbol:'Y', board:Array(C4_ROWS*C4_COLS).fill(null), myTurn:false, active:true, pendingInvite:null, waitingFor:null };
+  sendData(dataConns[inv.from], {type:'connect4', action:'accept', to:inv.from, from:myId});
+  renderC4();
+}
+function c4Decline(){
+  const inv = c4State.pendingInvite;
+  sendData(dataConns[inv.from], {type:'connect4', action:'decline', to:inv.from, from:myId});
+  c4State.pendingInvite = null;
+  renderC4();
+}
+function c4CheckResult(){
+  const b = c4State.board;
+  for (const [a,c,d,e] of C4_LINES){ if (b[a] && b[a]===b[c] && b[a]===b[d] && b[a]===b[e]) return b[a]; }
+  if (b.every(x=>x)) return 'draw';
+  return null;
+}
+function c4Drop(col){
+  if (!c4State.active || !c4State.myTurn) return;
+  let row = -1;
+  for (let r=C4_ROWS-1;r>=0;r--){ if (!c4State.board[r*C4_COLS+col]){ row = r; break; } }
+  if (row === -1) return; // column full
+  const cell = row*C4_COLS+col;
+  c4State.board[cell] = c4State.mySymbol;
+  c4State.myTurn = false;
+  sendData(dataConns[c4State.opponentId], {type:'connect4', action:'move', to:c4State.opponentId, from:myId, cell, symbol:c4State.mySymbol});
+  renderC4();
+}
+function c4Reset(){
+  c4State.board = Array(C4_ROWS*C4_COLS).fill(null);
+  c4State.myTurn = (c4State.mySymbol==='R');
+  sendData(dataConns[c4State.opponentId], {type:'connect4', action:'reset', to:c4State.opponentId, from:myId});
+  renderC4();
+}
+function renderC4(){
+  const body = document.getElementById('connect4-body');
+  if (!body) return;
+  if (c4State.pendingInvite && !c4State.active){
+    body.innerHTML = `<div class="invite-banner"><span>🎮 <b>${escapeHtml(c4State.pendingInvite.name)}</b> challenged you to Connect 4</span>
+      <span style="display:flex; gap:8px;"><button class="btn btn-secondary btn-sm" id="c4-accept">Accept</button><button class="btn btn-ghost btn-sm" id="c4-decline">Decline</button></span></div>`;
+    document.getElementById('c4-accept').addEventListener('click', c4Accept);
+    document.getElementById('c4-decline').addEventListener('click', c4Decline);
+    return;
+  }
+  if (c4State.waitingFor && !c4State.active){
+    body.innerHTML = `<p class="hint">Waiting for ${escapeHtml(participants[c4State.waitingFor]?.name||'them')} to accept…</p>`;
+    return;
+  }
+  if (!c4State.active){
+    body.innerHTML = `<p class="hint">Pick someone in the room to challenge.</p><div class="ttt-opponents" id="connect4-opponent-list"></div>`;
+    renderC4Opponents();
+    return;
+  }
+  const result = c4CheckResult();
+  let status;
+  if (result==='draw') status = "🤝 It's a draw!";
+  else if (result) status = (result===c4State.mySymbol) ? "🎉 You won!" : `${escapeHtml(c4State.opponentName)} won this round`;
+  else status = c4State.myTurn ? "Your move — tap a column" : `Waiting on ${escapeHtml(c4State.opponentName)}…`;
+
+  body.innerHTML = `
+    <div class="ttt-status">You are <b style="color:${c4State.mySymbol==='R'?'var(--coral)':'var(--gold)'}">${c4State.mySymbol==='R'?'🔴 Red':'🟡 Yellow'}</b> · vs ${escapeHtml(c4State.opponentName)} · ${status}</div>
+    <div class="c4-board" id="c4-board"></div>
+    <div class="quiz-actions">
+      ${result ? '<button class="btn btn-primary btn-sm" id="c4-again">Play again</button>' : ''}
+      <button class="btn btn-ghost btn-sm" id="c4-leave">Leave game</button>
+    </div>
+  `;
+  const boardEl = document.getElementById('c4-board');
+  const columnFull = Array.from({length:C4_COLS}, (_,c)=> !!c4State.board[c]); // top row cell per column
+  for (let col=0; col<C4_COLS; col++){
+    const colEl = document.createElement('button');
+    colEl.className = 'c4-column';
+    colEl.disabled = !!result || columnFull[col] || !c4State.myTurn;
+    for (let row=0; row<C4_ROWS; row++){
+      const val = c4State.board[row*C4_COLS+col];
+      const slot = document.createElement('span');
+      slot.className = 'c4-slot' + (val==='R'?' red':val==='Y'?' yellow':'');
+      colEl.appendChild(slot);
+    }
+    colEl.addEventListener('click', ()=> c4Drop(col));
+    boardEl.appendChild(colEl);
+  }
+  if (result) document.getElementById('c4-again').addEventListener('click', c4Reset);
+  document.getElementById('c4-leave').addEventListener('click', ()=>{
+    c4State = { opponentId:null, opponentName:'', mySymbol:null, board:Array(C4_ROWS*C4_COLS).fill(null), myTurn:false, active:false, pendingInvite:null, waitingFor:null };
+    renderC4();
   });
 }
 
@@ -864,4 +1018,160 @@ function renderDraft(){
   if (done){
     document.getElementById('btn-draft-again').addEventListener('click', draftStart);
   }
+}
+
+/* ---------------- Guess It: Movie / Song / Character (Music, Movies & Anime) ----------------
+   One shared engine for all three "Guess the ___" catalog entries — same
+   AI-generated-clue + offline-fallback + timed-reveal shape as Trivia,
+   just parameterized by category instead of three separate games. */
+const GUESS_CATEGORY_LABEL = { movie:'🎬 Movie', song:'🎵 Song', character:'🕵️ Character' };
+const GUESS_OFFLINE_BANK = {
+  movie: [
+    {q:"A hobbit and his friends set out to destroy a powerful ring before it falls into the wrong hands.", choices:["The Lord of the Rings","Harry Potter","Narnia","Eragon"], correct:0},
+    {q:"A retired assassin returns to the criminal underworld to avenge the death of a dog given to him by his late wife.", choices:["The Equalizer","Taken","John Wick","Nobody"], correct:2},
+    {q:"A group of superheroes must set aside their differences to stop an alien invasion of New York.", choices:["Justice League","The Avengers","X-Men","Watchmen"], correct:1},
+    {q:"A young lion prince flees his kingdom after his father's death, only to learn his true destiny years later.", choices:["Tarzan","The Lion King","Brother Bear","Ice Age"], correct:1},
+    {q:"A shark terrorizes a small beach town, forcing a police chief to hunt it down with a crew of two others.", choices:["Jaws","The Meg","Open Water","Deep Blue Sea"], correct:0},
+    {q:"A group of toys come to life when humans aren't around and must work together to get back to their owner.", choices:["The Brave Little Toaster","Toy Story","Small Soldiers","Corpse Bride"], correct:1}
+  ],
+  song: [
+    {q:"An 80s-inspired synth-pop hit about longing for someone, famous for a throwback style music video.", choices:["Blinding Lights","Uptown Funk","Shape of You","Happy"], correct:0},
+    {q:"A groovy funk-pop track referencing an emergency phone line, with a music video full of retro dance moves.", choices:["24K Magic","Uptown Funk","Can't Stop the Feeling","Treasure"], correct:1},
+    {q:"A breakup anthem about moving on and being fine without someone, built around a driving pop-rock beat.", choices:["Since U Been Gone","Rolling in the Deep","Before He Cheats","Since U Been Gone"], correct:1},
+    {q:"A feel-good pop song built around clapping and repeated declarations of joy, from an animated movie soundtrack.", choices:["Happy","Can't Stop the Feeling","Good Time","Roar"], correct:0},
+    {q:"A summery pop duet about a laid-back romance, named after a fruit that's also a nickname for someone sweet.", choices:["Peaches","Watermelon Sugar","Cherry","Sunflower"], correct:3}
+  ],
+  character: [
+    {q:"A billionaire vigilante who fights crime in a city plagued by corruption, without any superpowers of his own.", choices:["Batman","Iron Man","Deadpool","The Flash"], correct:0},
+    {q:"A wizard with a lightning-bolt scar who discovers he's famous in a hidden magical world.", choices:["Merlin","Harry Potter","Gandalf","Doctor Strange"], correct:1},
+    {q:"A green ogre who just wants to be left alone in his swamp, but ends up on a quest to rescue a princess.", choices:["Hagrid","Shrek","The Hulk","Groot"], correct:1},
+    {q:"A teenage boy bitten by a radioactive spider who swings through a city fighting crime while balancing school life.", choices:["Spider-Man","Static Shock","The Flash","Nightwing"], correct:0},
+    {q:"A fish who suffers from short-term memory loss and helps search for a missing clownfish across the ocean.", choices:["Nemo","Dory","Flounder","Bubbles"], correct:1}
+  ]
+};
+let guessState = { category:'movie', qIndex:-1, answers:{}, scores:{}, revealed:true, timerHandle:null, _correct:null };
+let guessRoundCounter = 0;
+let askedGuessPrompts = [];
+let guessOfflineOrder = {};
+
+function openGuessGame(category){
+  document.getElementById('category-detail').style.display='none';
+  document.getElementById('game-guess').style.display='block';
+  guessState.category = ['movie','song','character'].includes(category) ? category : 'movie';
+  renderGuessIntro();
+  if (typeof logActivity === 'function') logActivity('game', 'guess-'+guessState.category, 'Guess the '+GUESS_CATEGORY_LABEL[guessState.category].replace(/^\S+\s/,''));
+}
+function renderGuessIntro(){
+  const body = document.getElementById('guess-body');
+  if (!body) return;
+  body.innerHTML = `
+    <p class="hint">Everyone answers, then it reveals after 12 seconds. AI comes up with fresh clues — falls back to an offline bank if it's briefly unavailable.</p>
+    <button class="btn btn-primary" id="btn-guess-start" type="button">Start — ${GUESS_CATEGORY_LABEL[guessState.category]}</button>
+  `;
+  document.getElementById('btn-guess-start').addEventListener('click', ()=> guessNext(true));
+}
+async function fetchAiGuess(){
+  try{
+    const json = await callAiFunction({ mode:'guess', category: guessState.category, askedPrompts: askedGuessPrompts.slice(-15), callerId: myId });
+    const g = json.guess;
+    if (g && typeof g.clue === 'string' && Array.isArray(g.choices) && g.choices.length === 4 && typeof g.correctIndex === 'number'){
+      return { q: g.clue, choices: g.choices, correct: g.correctIndex };
+    }
+    throw new Error('AI returned an unexpected format');
+  }catch(e){
+    console.warn('AI guess unavailable after retry:', e.message);
+    return null;
+  }
+}
+function nextOfflineGuess(category){
+  if (!guessOfflineOrder[category] || guessOfflineOrder[category].length===0) guessOfflineOrder[category] = shuffledOrder(GUESS_OFFLINE_BANK[category].length);
+  const idx = guessOfflineOrder[category].shift();
+  return GUESS_OFFLINE_BANK[category][idx];
+}
+async function guessNext(broadcastIt){
+  const category = guessState.category;
+  if (broadcastIt){
+    const body = document.getElementById('guess-body');
+    if (body) body.innerHTML = '<p class="hint">🤖 Cooking up a clue…</p>';
+  }
+  let q = await fetchAiGuess();
+  if (!q){
+    q = nextOfflineGuess(category);
+    if (broadcastIt) toast('AI is briefly unavailable — using an offline clue', 'err');
+  }
+  askedGuessPrompts.push(q.q);
+  const roundId = 'gs' + (guessRoundCounter++) + '-' + Date.now();
+  startGuessQuestion(roundId, q, category, broadcastIt);
+}
+function startGuessQuestion(roundId, q, category, broadcastIt){
+  clearTimeout(guessState.timerHandle);
+  guessState = { category, qIndex:roundId, answers:{}, scores:guessState.scores||{}, revealed:false, timerHandle:null, _correct:q.correct };
+  renderGuessQuestion(q);
+  guessState.timerHandle = setTimeout(revealGuess, 12000);
+  if (broadcastIt) broadcast({type:'guess', action:'question', category, idx:roundId, q:q.q, choices:q.choices, correct:q.correct});
+}
+function renderGuessQuestion(q){
+  const body = document.getElementById('guess-body');
+  if (!body) return;
+  body.innerHTML = `
+    <p class="hint" style="margin-bottom:6px;">${GUESS_CATEGORY_LABEL[guessState.category]}</p>
+    <p class="quiz-question">${escapeHtml(q.q)}</p>
+    <div class="quiz-choices">${q.choices.map((c,i)=>`<button class="choice-btn" data-i="${i}"><span>${escapeHtml(c)}</span></button>`).join('')}</div>
+    <p class="hint" style="margin-top:10px;" id="guess-wait">12 seconds to answer…</p>
+    <div class="scoreboard" id="guess-scoreboard"></div>
+  `;
+  body.querySelectorAll('.choice-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      if (guessState.revealed || guessState.answers[myId]!==undefined) return;
+      const i = parseInt(btn.dataset.i,10);
+      guessState.answers[myId] = i;
+      btn.classList.add('selected');
+      document.getElementById('guess-wait').textContent = 'Answer locked in — waiting for reveal…';
+      broadcast({type:'guess', action:'answer', idx:guessState.qIndex, peerId:myId, choice:i});
+    });
+  });
+  renderGuessScoreboard();
+}
+registerHandler('guess', (fromId, data)=>{
+  if (data.action==='question'){
+    clearTimeout(guessState.timerHandle);
+    guessState = { category:data.category, qIndex:data.idx, answers:{}, scores:guessState.scores||{}, revealed:false, timerHandle:null, _correct:data.correct };
+    renderGuessQuestion({q:data.q, choices:data.choices, correct:data.correct});
+    guessState.timerHandle = setTimeout(revealGuess, 12000);
+  } else if (data.action==='answer'){
+    if (data.idx===guessState.qIndex && guessState.answers[data.peerId]===undefined){
+      guessState.answers[data.peerId] = data.choice;
+    }
+  }
+});
+function revealGuess(){
+  if (guessState.revealed) return;
+  guessState.revealed = true;
+  const correct = guessState._correct;
+  document.querySelectorAll('#guess-body .choice-btn').forEach(btn=>{
+    const i = parseInt(btn.dataset.i,10);
+    if (i===correct) btn.classList.add('correct');
+    else if (guessState.answers[myId]===i) btn.classList.add('wrong');
+  });
+  const waitEl = document.getElementById('guess-wait');
+  if (waitEl) waitEl.textContent = 'Revealed!';
+  Object.entries(guessState.answers).forEach(([pid,choice])=>{
+    if (choice===correct) guessState.scores[pid] = (guessState.scores[pid]||0)+1;
+  });
+  renderGuessScoreboard();
+  const body = document.getElementById('guess-body');
+  if (!document.getElementById('btn-guess-next')){
+    const div = document.createElement('div'); div.className='quiz-actions';
+    div.innerHTML = `<button class="btn btn-primary" id="btn-guess-next">Next round</button>`;
+    body.appendChild(div);
+    document.getElementById('btn-guess-next').addEventListener('click', ()=> guessNext(true));
+  }
+}
+function renderGuessScoreboard(){
+  const el = document.getElementById('guess-scoreboard'); if (!el) return;
+  const rows = Object.entries(guessState.scores||{}).sort((a,b)=>b[1]-a[1]);
+  el.innerHTML = rows.map(([pid,score])=>{
+    const name = pid===myId ? 'You' : (participants[pid]?.name || '…');
+    return `<div class="score-row"><span>${escapeHtml(name)}</span><b>${score}</b></div>`;
+  }).join('');
 }

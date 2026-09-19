@@ -97,14 +97,28 @@ async function fetchFriends(){
   return profiles || [];
 }
 
-// ---------- Entry point ----------
+// ---------- Entry / exit ----------
+// Profile is its own top-level screen now, not a tab inside the room —
+// opening it just swaps screen-room out for screen-profile; closing it
+// swaps back, and whatever screen-room had showing (entry-hub or
+// activity-shell, and whichever pane) is untouched underneath, so it's
+// exactly where you left it.
 function openProfileForPeer(peerId){
   const isOwn = (peerId === myId);
   const userId = isOwn ? (currentUser ? currentUser.id : null) : (participants[peerId] ? participants[peerId].userId : null);
   const fallbackName = isOwn ? myName : (participants[peerId] ? participants[peerId].name : 'Someone');
-  setMode('profile', false);
+
+  document.getElementById('screen-room').style.display = 'none';
+  document.getElementById('screen-profile').style.display = 'flex';
+  window.scrollTo(0,0);
   renderProfile(userId, fallbackName, isOwn);
 }
+function closeProfileScreen(){
+  document.getElementById('screen-profile').style.display = 'none';
+  document.getElementById('screen-room').style.display = 'block';
+  window.scrollTo(0,0);
+}
+document.getElementById('btn-profile-back')?.addEventListener('click', closeProfileScreen);
 
 // ---------- Rendering ----------
 function dedupeConsecutive(items){
@@ -186,7 +200,7 @@ function wireOwnFriendsSectionButtons(){
     btn.addEventListener('click', async ()=>{ await respondToFriendRequest(btn.dataset.declineReq, false); toast('Request declined'); openProfileForPeer(myId); });
   });
   document.querySelectorAll('[data-view-friend]').forEach(row=>{
-    row.addEventListener('click', ()=>{ setMode('profile', false); renderProfile(row.dataset.viewFriend, '', false); });
+    row.addEventListener('click', ()=> renderProfile(row.dataset.viewFriend, '', false));
   });
 }
 function showProfileEditForm(profile){
@@ -277,6 +291,8 @@ async function renderProfile(userId, fallbackName, isOwn){
   }
 }
 
-// ---------- Nav wiring ----------
-const profileNavBtn = document.querySelector('.nav-btn[data-mode="profile"]');
-if (profileNavBtn) profileNavBtn.addEventListener('click', ()=> openProfileForPeer(myId));
+// ---------- Entry-hub wiring ----------
+// Profile lives on the entry-hub ("What are we doing tonight?") screen, and
+// is also reachable by tapping anyone's avatar from inside a room.
+const entryProfileBtn = document.getElementById('entry-btn-profile');
+if (entryProfileBtn) entryProfileBtn.addEventListener('click', ()=> openProfileForPeer(myId));

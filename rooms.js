@@ -3,8 +3,14 @@
    Saved-rooms list (Supabase `rooms` table) — the screen between
    login and Create/Join — plus the knock-to-enter flow: someone
    typing in a room code broadcasts a request that current members
-   can accept or deny. Invite links and your own saved rooms skip
-   this entirely (see requireApproval in peer-manager.js).
+   can accept or deny.
+
+   Phase 8: rooms can now be private (knock required) or open (join
+   straight in, the original behavior). Privacy only applies to
+   SAVED rooms — an ephemeral, never-saved room has no owner_id on
+   record to check against, so it stays open. Once a signed-in
+   person is approved into a private room, they're remembered in
+   `room_members` and won't need to knock again next time.
    ============================================================ */
 
 // ---------- Saved rooms CRUD ----------
@@ -16,9 +22,12 @@ async function fetchMySavedRooms(){
   if (error){ console.error(error); return []; }
   return data || [];
 }
-async function saveCurrentRoom(name){
+async function saveCurrentRoom(name, icon, privacy){
   if (!currentUser || !supabaseClient){ toast('Log in to save rooms'); return false; }
-  const { error } = await supabaseClient.from('rooms').insert({ code: roomCode, name, owner_id: currentUser.id });
+  const { error } = await supabaseClient.from('rooms').insert({
+    code: roomCode, name, owner_id: currentUser.id,
+    icon: icon || '🎬', privacy: privacy === 'private' ? 'private' : 'open'
+  });
   if (error){
     console.error(error);
     toast(error.code === '23505' ? 'You already saved this room' : "Couldn't save this room — try again");
@@ -30,6 +39,27 @@ async function saveCurrentRoom(name){
 async function deleteSavedRoom(id){
   if (!supabaseClient) return;
   await supabaseClient.from('rooms').delete().eq('id', id);
+}
+
+// Decides whether joining `code` needs a knock. Only ever true for a SAVED
+// private room, joined by someone who isn't its owner and isn't already a
+// remembered member.
+async function resolveRequireApproval(code){
+  if (!supabaseClient) return false;
+  const { data: room } = await supabaseClient.from('rooms').select('privacy, owner_id').eq('code', code).maybeSingle();
+  if (!room || room.privacy !== 'private') return false;
+  if (currentUser && room.owner_id === currentUser.id) return false;
+  if (currentUser){
+    const { data: membership } = await supabaseClient.from('room_members')
+      .select('user_id').eq('room_code', code).eq('user_id', currentUser.id).maybeSingle();
+    if (membership) return false; // a known member skips the knock
+  }
+  return true;
+}
+async function addRoomMember(code, userId){
+  if (!supabaseClient || !userId) return;
+  const { error } = await supabaseClient.from('room_members').insert({ room_code: code, user_id: userId });
+  if (error && error.code !== '23505') console.error('Failed to remember room member:', error); // 23505 = already remembered, fine
 }
 
 // ---------- Saved-rooms screen ----------
@@ -47,8 +77,11 @@ async function renderSavedRoomsScreen(){
   listEl.innerHTML = rooms.map(r => `
     <div class="saved-room-card">
       <div class="saved-room-info">
-        <h4>${escapeHtml(r.name)}</h4>
-        <p class="hint mono">${escapeHtml(r.code.slice(0,10))}…</p>
+        <div class="saved-room-icon">${escapeHtml(r.icon || '🎬')}</div>
+        <div>
+          <h4>${escapeHtml(r.name)}</h4>
+          <p class="hint mono">${escapeHtml(r.code.slice(0,10))}… ${r.privacy === 'private' ? '· 🔒 Private' : ''}</p>
+        </div>
       </div>
       <div class="saved-room-actions">
         <button class="btn btn-secondary btn-sm" data-join="${r.code}" data-name="${escapeHtml(r.name)}">Join</button>
@@ -88,19 +121,30 @@ document.getElementById('btn-back-to-rooms').addEventListener('click', ()=>{
 });
 
 // ---------- Save-this-room inline bar (shown once inside a room) ----------
+let selectedRoomIcon = '🎬';
 document.getElementById('entry-btn-save-room').addEventListener('click', ()=>{
   const bar = document.getElementById('save-room-bar');
   bar.style.display = bar.style.display==='flex' ? 'none' : 'flex';
   if (bar.style.display==='flex') document.getElementById('save-room-name').focus();
 });
+document.querySelectorAll('.icon-choice').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    selectedRoomIcon = btn.dataset.icon;
+    document.querySelectorAll('.icon-choice').forEach(b=> b.classList.toggle('selected', b===btn));
+  });
+});
 document.getElementById('btn-save-room-confirm').addEventListener('click', async ()=>{
   const name = document.getElementById('save-room-name').value.trim();
   if (!name){ toast('Give the room a name first'); return; }
-  const ok = await saveCurrentRoom(name);
+  const privacy = document.getElementById('toggle-room-private').classList.contains('on') ? 'private' : 'open';
+  const ok = await saveCurrentRoom(name, selectedRoomIcon, privacy);
   if (ok){ document.getElementById('save-room-bar').style.display='none'; document.getElementById('save-room-name').value=''; }
 });
 document.getElementById('btn-save-room-cancel').addEventListener('click', ()=>{
   document.getElementById('save-room-bar').style.display='none';
+});
+document.getElementById('toggle-room-private')?.addEventListener('click', function(){
+  this.classList.toggle('on');
 });
 
 // ---------- Knock-to-enter UI ----------
@@ -127,7 +171,11 @@ window.onKnockReceived = function(payload){
     </span>`;
   document.body.appendChild(banner);
   const [acceptBtn, denyBtn] = banner.querySelectorAll('button');
-  acceptBtn.addEventListener('click', ()=>{ respondToKnock(payload.peerId, true); banner.remove(); });
+  acceptBtn.addEventListener('click', async ()=>{
+    respondToKnock(payload.peerId, true);
+    if (payload.userId) await addRoomMember(roomCode, payload.userId);
+    banner.remove();
+  });
   denyBtn.addEventListener('click', ()=>{ respondToKnock(payload.peerId, false); banner.remove(); });
   setTimeout(()=> banner.remove(), 30000); // matches the knocker's own timeout
 };

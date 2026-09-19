@@ -131,7 +131,8 @@ function beginKnock(){
       })
       .subscribe((status)=>{
          if (status === 'SUBSCRIBED'){
-            roomChannel.send({ type:'broadcast', event:'knock', payload:{ peerId:myId, name:myName
+            roomChannel.send({ type:'broadcast', event:'knock', payload:{ peerId:myId, name:myName,
+                                 userId: (typeof currentUser!=='undefined' && currentUser) ? currentUser.id : null
                                  }
                              });
             setTimeout(()=>{
@@ -289,9 +290,14 @@ registerHandler('rename', (fromId, data)=>{
 registerHandler('mic', (fromId, data)=>{
   if (participants[fromId]) participants[fromId].muted = data.muted;
   renderOrbit();
+  renderHubPresence();
 });
 registerHandler('mode', (fromId, data)=>{
   if (window.onRemoteMode) window.onRemoteMode(data.mode);
+});
+registerHandler('presence-status', (fromId, data)=>{
+  if (participants[fromId]) participants[fromId].status = data.status;
+  renderHubPresence();
 });
 
 
@@ -351,3 +357,32 @@ function renderOrbit(){
   });
   if (window.onOrbitRender) window.onOrbitRender();
 }
+
+// ---------- Hub presence (entry-hub's "who's here and what they're up to") ----------
+function presenceStatusLabel(status){
+  return { video:'🎬 Watching', music:'🎵 Listening', games:'🎮 Playing', chat:'🗨️ Chatting', talk:'📞 Talking' }[status] || '💤 In the hub';
+}
+function renderHubPresence(){
+  const el = document.getElementById('hub-presence-list');
+  if (!el) return;
+  const ids = Object.keys(participants);
+  el.innerHTML = ids.map(id=>{
+    const p = participants[id];
+    const statusText = presenceStatusLabel(p.status);
+    const micIcon = p.muted === false ? ' 🎤' : '';
+    return `
+      <div class="hub-presence-row" data-hub-avatar="${id}">
+        <div class="avatar" data-peer="${id}" style="background:${nameColor(p.name||'?')}">${initials(p.name)}</div>
+        <div class="hub-presence-info">
+          <div class="hub-presence-name">${id===myId ? 'You' : escapeHtml(p.name)}</div>
+          <div class="hub-presence-status">${statusText}${micIcon}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+  el.querySelectorAll('[data-hub-avatar]').forEach(row=>{
+    row.style.cursor = 'pointer';
+    row.addEventListener('click', ()=>{ if (typeof openProfileForPeer === 'function') openProfileForPeer(row.dataset.hubAvatar); });
+  });
+}
+window.onOrbitRender = (function(prev){ return function(){ if (prev) prev(); renderHubPresence(); }; })(window.onOrbitRender);

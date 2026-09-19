@@ -114,14 +114,29 @@
         <button class="icon-btn" id="entry-btn-invite" title="Copy invite link">🔗</button>
       </div>
       <div style="display:flex; gap:8px;">
+    <button class="btn btn-ghost btn-sm" id="entry-btn-profile">👤 Profile</button>
     <button class="btn btn-ghost btn-sm" id="entry-btn-save-room">💾 Save room</button>
     <button class="btn btn-ghost btn-sm" id="entry-btn-leave">Leave</button>
   </div>
 </div>
 <div class="save-room-bar" id="save-room-bar" style="display:none;">
   <input type="text" id="save-room-name" placeholder="Name this room…" maxlength="40">
-  <button class="btn btn-secondary btn-sm" id="btn-save-room-confirm">Save</button>
-  <button class="btn btn-ghost btn-sm" id="btn-save-room-cancel">Cancel</button>
+  <div class="icon-choices">
+    <button type="button" class="icon-choice selected" data-icon="🎬">🎬</button>
+    <button type="button" class="icon-choice" data-icon="🎵">🎵</button>
+    <button type="button" class="icon-choice" data-icon="🎮">🎮</button>
+    <button type="button" class="icon-choice" data-icon="🎉">🎉</button>
+    <button type="button" class="icon-choice" data-icon="🔥">🔥</button>
+    <button type="button" class="icon-choice" data-icon="🌙">🌙</button>
+  </div>
+  <div class="save-room-privacy-row">
+    <span>🔒 Private (require approval to join)</span>
+    <div class="toggle" id="toggle-room-private"></div>
+  </div>
+  <div class="save-room-bar-actions">
+    <button class="btn btn-secondary btn-sm" id="btn-save-room-confirm">Save</button>
+    <button class="btn btn-ghost btn-sm" id="btn-save-room-cancel">Cancel</button>
+  </div>
 </div>
     
     <h2>What are we doing tonight?</h2>
@@ -143,12 +158,18 @@
         <p>Trivia, party games &amp; duels</p>
       </div>
     </div>
+
+    <div class="hub-presence">
+      <h4>In the room</h4>
+      <div id="hub-presence-list"></div>
+    </div>
     </div>
   </div>
 
   <!-- Activity shell: appears once a mode is chosen -->
   <div id="activity-shell">
     <div class="topbar">
+      <button class="icon-btn" id="btn-back-to-hub" title="Back to menu">←</button>
       <div class="brand"><span class="brand-dot"></span><span>Together</span></div>
       <div class="mode-nav">
         <button class="nav-btn" data-mode="video">🎬 Watch</button>
@@ -156,8 +177,6 @@
         <button class="nav-btn" data-mode="games">🎮 Play</button>
         <button class="nav-btn" data-mode="chat">🗨️ Chat</button>
         <button class="nav-btn" data-mode="talk">📞 Talk</button>
-        <button class="nav-btn" data-mode="playlist">⭐ Playlist</button>
-        <button class="nav-btn" data-mode="profile">👤 Profile</button>
       </div>
       <div class="topbar-right">
         <div class="roomcode-pill">
@@ -230,7 +249,12 @@
               <button class="btn btn-ghost btn-sm" id="btn-seek-video">Go</button>
             </div>
           </div>
-          <p class="hint">Synced to the whole room automatically. Tap 💬 in the sidebar to chat while you watch.</p>
+          <p class="hint">Synced to the whole room automatically. Head to the 🗨️ Chat tab to talk while you watch.</p>
+
+          <div class="inline-playlist-section">
+            <h4 class="queue-heading">⭐ Video Playlist</h4>
+            <div id="playlist-video-list-inline" class="playlist-list"></div>
+          </div>
         </div>
 
         <!-- MUSIC -->
@@ -300,7 +324,12 @@
           </div>
           <audio id="local-audio-player" controls style="width:100%; display:none;"></audio>
 
-          <p class="hint">Same sync engine as the video room. Chat's open here — type freely, or mention <b>@ai</b> for a joke or a recommendation.</p>
+          <p class="hint">Same sync engine as the video room. Head to the 🗨️ Chat tab to talk — mention <b>@Buddy</b> there for a joke or a recommendation.</p>
+
+          <div class="inline-playlist-section">
+            <h4 class="queue-heading">⭐ Music Playlist</h4>
+            <div id="playlist-music-list-inline" class="playlist-list"></div>
+          </div>
         </div>
 
         <!-- GAMES -->
@@ -337,6 +366,21 @@
             <div id="ttt-body">
               <p class="hint">Pick someone in the room to challenge.</p>
               <div class="ttt-opponents" id="ttt-opponent-list"></div>
+            </div>
+          </div>
+
+          <div class="game-panel" id="game-connect4" style="display:none;">
+            <button class="back-link" data-back-game type="button">← Games</button>
+            <div id="connect4-body">
+              <p class="hint">Pick someone in the room to challenge.</p>
+              <div class="ttt-opponents" id="connect4-opponent-list"></div>
+            </div>
+          </div>
+
+          <div class="game-panel" id="game-guess" style="display:none;">
+            <button class="back-link" data-back-game type="button">← Games</button>
+            <div id="guess-body">
+              <p class="hint">Loading…</p>
             </div>
           </div>
 
@@ -407,27 +451,9 @@
           </div>
         </div>
 
-        <!-- PLAYLIST -->
-        <div class="pane" id="pane-playlist">
-          <h3 class="games-heading">⭐ Your playlists</h3>
-          <div class="playlist-section">
-            <h4>🎬 Videos</h4>
-            <div id="playlist-video-list" class="playlist-list"></div>
-          </div>
-          <div class="playlist-section">
-            <h4>🎵 Music</h4>
-            <div id="playlist-music-list" class="playlist-list"></div>
-          </div>
-        </div>        
-
-        <!-- PROFILE -->
-        <div class="pane" id="pane-profile">
-          <div id="profile-view"></div>
-        </div>
-
       </div>
 
-      <div class="side-col">
+      <div class="side-col" id="side-col">
         <div class="constellation">
           <h4 id="participant-count">In the room</h4>
           <div class="orbit" id="orbit"></div>
@@ -457,6 +483,15 @@
           </div>
     </div>
   </div>
+</div>
+
+<!-- ================= PROFILE (its own screen, not nested in the room) ================= -->
+<div id="screen-profile" style="display:none; min-height:100vh; flex-direction:column;">
+  <div class="profile-screen-topbar">
+    <button class="icon-btn" id="btn-profile-back" title="Back">←</button>
+    <span class="profile-screen-title">Profile</span>
+  </div>
+  <div id="profile-view" class="profile-screen-body"></div>
 </div>
 
 <!-- ================= SETTINGS ================= -->

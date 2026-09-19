@@ -68,17 +68,30 @@ function addChatMessage(msg){
   chatMessages[msg.id] = msg;
   const log = document.getElementById('chat-log');
   if (log){
+    const senderKey = (msg.fromId || (msg.mine ? myId : msg.name)) + ':' + (msg.isAI ? 'ai' : 'user');
+    const lastEl = log.lastElementChild;
+    const grouped = !!(lastEl && lastEl.classList.contains('msg') && lastEl.dataset.senderKey === senderKey
+      && (msg.timestamp - parseInt(lastEl.dataset.lastTs || '0', 10)) < 5*60*1000);
+
     const div = document.createElement('div');
-    div.className = 'msg' + (msg.isAI ? ' ai' : '');
+    div.className = 'msg' + (grouped ? ' grouped' : '');
     div.dataset.messageId = msg.id;
+    div.dataset.senderKey = senderKey;
+    div.dataset.lastTs = String(msg.timestamp);
     const color = msg.isAI ? 'var(--violet)' : (msg.mine ? 'var(--gold)' : nameColor(msg.name));
+
     div.innerHTML = `
-      ${msg.replyTo ? `<div class="msg-reply-preview"><b>${escapeHtml(msg.replyTo.name)}</b><span>${escapeHtml(msg.replyTo.text.slice(0,80))}</span></div>` : ''}
-      <div class="who" style="color:${color}">${escapeHtml(msg.name)}</div>
-      <div class="txt">${escapeHtml(msg.text)}</div>
-      <div class="msg-meta">
-        <span class="msg-time">${formatTime(msg.timestamp)}</span>
-        <span class="msg-reactions" id="reactions-${msg.id}"></span>
+      <div class="msg-avatar" style="background:${nameColor(msg.name)}">${initials(msg.name)}</div>
+      <div class="msg-body">
+        ${grouped ? '' : `
+        <div class="msg-header">
+          <span class="msg-author" style="color:${color}">${escapeHtml(msg.name)}</span>
+          ${msg.isAI ? '<span class="msg-bot-tag">BOT</span>' : ''}
+          <span class="msg-time">${formatTime(msg.timestamp)}</span>
+        </div>`}
+        ${msg.replyTo ? `<div class="msg-reply-preview"><b>${escapeHtml(msg.replyTo.name)}</b><span>${escapeHtml(msg.replyTo.text.slice(0,80))}</span></div>` : ''}
+        <div class="txt">${grouped ? `<span class="msg-time-grouped">${formatTime(msg.timestamp)}</span>` : ''}${escapeHtml(msg.text)}</div>
+        <div class="msg-reactions" id="reactions-${msg.id}"></div>
       </div>
     `;
     log.appendChild(div);
@@ -176,8 +189,12 @@ function applyEdit(id, newText){
   const msg = chatMessages[id]; if (!msg) return;
   msg.text = newText;
   msg.edited = true;
-  const txtEl = document.querySelector(`.msg[data-message-id="${id}"] .txt`);
-  if (txtEl) txtEl.innerHTML = `${escapeHtml(newText)} <span class="edited-tag">(edited)</span>`;
+  const msgEl = document.querySelector(`.msg[data-message-id="${id}"]`);
+  const txtEl = msgEl?.querySelector('.txt');
+  if (txtEl){
+    const timePrefix = msgEl.classList.contains('grouped') ? `<span class="msg-time-grouped">${formatTime(msg.timestamp)}</span>` : '';
+    txtEl.innerHTML = `${timePrefix}${escapeHtml(newText)} <span class="edited-tag">(edited)</span>`;
+  }
 }
 function deleteMessage(id){
   const msg = chatMessages[id]; if (!msg || !msg.mine) return;
@@ -186,8 +203,12 @@ function deleteMessage(id){
   renderDeletedMessage(id);
 }
 function renderDeletedMessage(id){
-  const txtEl = document.querySelector(`.msg[data-message-id="${id}"] .txt`);
-  if (txtEl) txtEl.innerHTML = '<em class="deleted-text">This message was deleted</em>';
+  const msgEl = document.querySelector(`.msg[data-message-id="${id}"]`);
+  const txtEl = msgEl?.querySelector('.txt');
+  if (txtEl){
+    const timePrefix = msgEl.classList.contains('grouped') ? `<span class="msg-time-grouped">${formatTime(chatMessages[id]?.timestamp || Date.now())}</span>` : '';
+    txtEl.innerHTML = `${timePrefix}<em class="deleted-text">This message was deleted</em>`;
+  }
   const reactionsEl = document.getElementById('reactions-' + id);
   if (reactionsEl) reactionsEl.innerHTML = '';
 }
