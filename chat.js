@@ -32,13 +32,53 @@ function formatTime(ts){
   return new Date(ts).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' });
 }
 
+// ---------- Persistence ----------
+// Chat is permanent now — every message is saved to the database as it
+// happens, and the room's full history loads for anyone who joins or
+// rejoins after a refresh. Nothing here auto-expires; a message only goes
+// away if someone explicitly deletes it (still a soft delete, matching the
+// placeholder behavior below).
+function saveMessageToDb(msg){
+  if (!supabaseClient || !roomCode) return;
+  supabaseClient.from('chat_messages').insert({
+    id: msg.id, room_code: roomCode,
+    sender_id: currentUser ? currentUser.id : null,
+    sender_name: msg.name, text: msg.text, is_ai: !!msg.isAI,
+    reply_to: msg.replyTo || null, reactions: msg.reactions || {},
+    edited: !!msg.edited, deleted: !!msg.deleted
+  }).then(({ error })=>{ if (error) console.error('Failed to save chat message:', error); });
+}
+function updateMessageInDb(id, fields){
+  if (!supabaseClient) return;
+  supabaseClient.from('chat_messages').update(fields).eq('id', id)
+    .then(({ error })=>{ if (error) console.error('Failed to update chat message:', error); });
+}
+async function loadChatHistory(){
+  if (!supabaseClient || !roomCode) return;
+  const { data, error } = await supabaseClient
+    .from('chat_messages').select('*').eq('room_code', roomCode)
+    .order('created_at', { ascending:true }).limit(500);
+  if (error){ console.error('Failed to load chat history:', error); return; }
+  (data || []).forEach(row=>{
+    const mine = !!(currentUser && row.sender_id === currentUser.id);
+    addChatMessage({
+      id: row.id, fromId: mine ? myId : null, name: row.sender_name, text: row.text,
+      mine, isAI: !!row.is_ai, timestamp: new Date(row.created_at).getTime(),
+      replyTo: row.reply_to || null, reactions: row.reactions || {},
+      edited: !!row.edited, deleted: !!row.deleted, fromHistory: true
+    });
+  });
+}
+
 // ---------- Sending ----------
 function sendChatMessage(name, text, isAI, replyTo){
   const id = makeMessageId();
   const timestamp = Date.now();
-  addChatMessage({ id, fromId:myId, name, text, mine:true, isAI:!!isAI, timestamp,
-    replyTo: replyTo || null, reactions:{}, edited:false, deleted:false });
+  const msg = { id, fromId:myId, name, text, mine:true, isAI:!!isAI, timestamp,
+    replyTo: replyTo || null, reactions:{}, edited:false, deleted:false };
+  addChatMessage(msg);
   broadcast({ type:'chat', action:'send', id, name, text, isAI:!!isAI, timestamp, replyTo: replyTo || null });
+  saveMessageToDb(msg);
 }
 
 function sendChatFromInput(){
@@ -52,6 +92,7 @@ function sendChatFromInput(){
     const id = editingId;
     applyEdit(id, text);
     broadcast({ type:'chat', action:'edit', id, text });
+    updateMessageInDb(id, { text, edited:true });
     cancelComposeContext();
     return;
   }
@@ -68,17 +109,23 @@ function addChatMessage(msg){
   chatMessages[msg.id] = msg;
   const log = document.getElementById('chat-log');
   if (log){
+    if (log.querySelector(`[data-message-id="${msg.id}"]`)) return; // already rendered — avoid a duplicate
+
     const senderKey = (msg.fromId || (msg.mine ? myId : msg.name)) + ':' + (msg.isAI ? 'ai' : 'user');
     const lastEl = log.lastElementChild;
     const grouped = !!(lastEl && lastEl.classList.contains('msg') && lastEl.dataset.senderKey === senderKey
       && (msg.timestamp - parseInt(lastEl.dataset.lastTs || '0', 10)) < 5*60*1000);
 
     const div = document.createElement('div');
-    div.className = 'msg' + (grouped ? ' grouped' : '');
+    div.className = 'msg' + (grouped ? ' grouped' : '') + ((msg.mine && !msg.isAI) ? ' mine' : '');
     div.dataset.messageId = msg.id;
     div.dataset.senderKey = senderKey;
     div.dataset.lastTs = String(msg.timestamp);
     const color = msg.isAI ? 'var(--violet)' : (msg.mine ? 'var(--gold)' : nameColor(msg.name));
+    const timePrefix = grouped ? `<span class="msg-time-grouped">${formatTime(msg.timestamp)}</span>` : '';
+    const bodyHtml = msg.deleted
+      ? '<em class="deleted-text">This message was deleted</em>'
+      : `${escapeHtml(msg.text)}${msg.edited ? ' <span class="edited-tag">(edited)</span>' : ''}`;
 
     div.innerHTML = `
       <div class="msg-avatar" style="background:${nameColor(msg.name)}">${initials(msg.name)}</div>
@@ -89,20 +136,21 @@ function addChatMessage(msg){
           ${msg.isAI ? '<span class="msg-bot-tag">BOT</span>' : ''}
           <span class="msg-time">${formatTime(msg.timestamp)}</span>
         </div>`}
-        ${msg.replyTo ? `<div class="msg-reply-preview"><b>${escapeHtml(msg.replyTo.name)}</b><span>${escapeHtml(msg.replyTo.text.slice(0,80))}</span></div>` : ''}
-        <div class="txt">${grouped ? `<span class="msg-time-grouped">${formatTime(msg.timestamp)}</span>` : ''}${escapeHtml(msg.text)}</div>
+        ${(msg.replyTo && !msg.deleted) ? `<div class="msg-reply-preview"><b>${escapeHtml(msg.replyTo.name)}</b><span>${escapeHtml(msg.replyTo.text.slice(0,80))}</span></div>` : ''}
+        <div class="txt">${timePrefix}${bodyHtml}</div>
         <div class="msg-reactions" id="reactions-${msg.id}"></div>
       </div>
     `;
     log.appendChild(div);
     log.scrollTop = log.scrollHeight;
     attachMessageInteractions(div, msg.id);
+    renderMessageReactions(msg.id);
   }
 
-  recentChatLog.push({ name: msg.name, text: msg.text });
+  recentChatLog.push({ name: msg.name, text: msg.deleted ? '' : msg.text });
   if (recentChatLog.length > 15) recentChatLog.shift();
 
-  if (!msg.mine && !isChatVisible()) bumpUnread();
+  if (!msg.mine && !msg.fromHistory && !isChatVisible()) bumpUnread();
 }
 
 function addSystemMessage(text){
@@ -126,7 +174,7 @@ registerHandler('chat', (fromId, data)=>{
     applyEdit(data.id, data.text);
   } else if (data.action === 'delete'){
     const msg = chatMessages[data.id];
-    if (msg){ msg.deleted = true; renderDeletedMessage(data.id); }
+    if (msg){ msg.deleted = true; msg.text = ''; renderDeletedMessage(data.id); }
   } else if (data.action === 'react'){
     const msg = chatMessages[data.id]; if (!msg) return;
     if (!msg.reactions[data.emoji]) msg.reactions[data.emoji] = [];
@@ -160,24 +208,29 @@ function renderTypingIndicator(){
 function showBuddyTyping(on){ buddyTyping = on; renderTypingIndicator(); }
 
 // ---------- Reactions ----------
+function reactorId(){ return (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : myId; }
 function toggleReaction(id, emoji){
   const msg = chatMessages[id]; if (!msg) return;
+  const me = reactorId();
   if (!msg.reactions[emoji]) msg.reactions[emoji] = [];
-  const idx = msg.reactions[emoji].indexOf(myId);
+  const idx = msg.reactions[emoji].indexOf(me);
   const adding = idx === -1;
-  if (adding) msg.reactions[emoji].push(myId);
+  if (adding) msg.reactions[emoji].push(me);
   else msg.reactions[emoji].splice(idx,1);
   if (msg.reactions[emoji].length === 0) delete msg.reactions[emoji];
   renderMessageReactions(id);
-  broadcast({ type:'chat', action:'react', id, emoji, peerId:myId, add:adding });
+  broadcast({ type:'chat', action:'react', id, emoji, peerId:me, add:adding });
+  updateMessageInDb(id, { reactions: msg.reactions });
 }
 function renderMessageReactions(id){
   const el = document.getElementById('reactions-' + id);
   if (!el) return;
   const msg = chatMessages[id];
-  el.innerHTML = Object.entries(msg.reactions || {}).map(([emoji, peerIds])=>{
-    const mine = peerIds.includes(myId);
-    return `<button class="reaction-pill ${mine?'mine':''}" data-toggle-emoji="${emoji}">${emoji} ${peerIds.length}</button>`;
+  if (!msg) return;
+  const me = reactorId();
+  el.innerHTML = Object.entries(msg.reactions || {}).map(([emoji, ids])=>{
+    const mine = ids.includes(me);
+    return `<button class="reaction-pill ${mine?'mine':''}" data-toggle-emoji="${emoji}">${emoji} ${ids.length}</button>`;
   }).join('');
   el.querySelectorAll('[data-toggle-emoji]').forEach(btn=>{
     btn.addEventListener('click', ()=> toggleReaction(id, btn.dataset.toggleEmoji));
@@ -199,7 +252,9 @@ function applyEdit(id, newText){
 function deleteMessage(id){
   const msg = chatMessages[id]; if (!msg || !msg.mine) return;
   msg.deleted = true;
+  msg.text = '';
   broadcast({ type:'chat', action:'delete', id });
+  updateMessageInDb(id, { deleted:true, text:'' });
   renderDeletedMessage(id);
 }
 function renderDeletedMessage(id){

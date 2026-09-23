@@ -145,20 +145,19 @@ window.onConnectionStatus = function(state){
                  };
 
 // ---------- Entry gate (choice-only) ----------
-window.onPeerReady = function(){
+window.onPeerReady = async function(){
   document.getElementById('screen-landing').style.display='none';
   document.getElementById('screen-room').style.display='block';
   document.getElementById('entry-hub').style.display='flex';
   window.scrollTo(0,0);
   document.getElementById('entry-room-code').textContent = shortCode(roomCode);
   document.getElementById('input-rename').value = myName;
+  if (typeof loadChatHistory === 'function') await loadChatHistory();
   addSystemMessage(isHost ? `Room created. Share the code "${roomCode}" with your friends.` : `You joined "${roomCode}".`);
   if (typeof autoJoinVoiceIfEnabled === 'function') autoJoinVoiceIfEnabled();
 };
 document.getElementById('entry-btn-copy').addEventListener('click', copyRoomCode);
-document.getElementById('btn-copy').addEventListener('click', copyRoomCode);
 document.getElementById('entry-btn-invite').addEventListener('click', copyInviteLink);
-document.getElementById('btn-invite').addEventListener('click', copyInviteLink);
 
 const buttonStates = {};
 
@@ -167,16 +166,14 @@ function copyRoomCode(){
   buttonStates['copy-in-progress'] = true;
   
   navigator.clipboard.writeText(roomCode).then(()=>{
-    ['entry-btn-copy','btn-copy'].forEach(id=>{
-      const btn=document.getElementById(id);
-      if (!btn) return;
-      const old=btn.textContent;
-      btn.textContent='✓';
-      const timeout = setTimeout(()=>{
-        btn.textContent=old;
-        if (id === 'btn-copy') buttonStates['copy-in-progress'] = false;
-      }, 1200);
-    });
+    const btn = document.getElementById('entry-btn-copy');
+    if (btn){
+      const old = btn.textContent;
+      btn.textContent = '✓';
+      setTimeout(()=>{ btn.textContent = old; buttonStates['copy-in-progress'] = false; }, 1200);
+    } else {
+      buttonStates['copy-in-progress'] = false;
+    }
     toast('Room code copied');
   }).catch(err => {
     console.error('Failed to copy room code:', err);
@@ -199,7 +196,6 @@ function leaveRoom(){
   location.reload();
 }
 document.getElementById('entry-btn-leave').addEventListener('click', leaveRoom);
-document.getElementById('btn-leave').addEventListener('click', leaveRoom);
 
 document.querySelectorAll('.hub-card').forEach(c=> c.addEventListener('click', ()=> enterActivity(c.dataset.mode, true)));
 document.getElementById('btn-back-to-hub').addEventListener('click', ()=>{
@@ -207,6 +203,9 @@ document.getElementById('btn-back-to-hub').addEventListener('click', ()=>{
   document.getElementById('entry-hub').style.display='flex';
   window.scrollTo(0,0);
 });
+document.getElementById('btn-chat-video-call').addEventListener('click', ()=> toast('Video calling is coming soon 📹'));
+document.getElementById('btn-chat-voice-call').addEventListener('click', ()=> setMode('talk', false));
+document.getElementById('btn-chat-menu').addEventListener('click', ()=> toast('More options coming soon'));
 
 let isEnteringActivity = false;
 
@@ -217,7 +216,6 @@ function enterActivity(mode, broadcastIt){
   document.getElementById('entry-hub').style.display='none';
   document.getElementById('activity-shell').style.display='flex';
   window.scrollTo(0,0);
-  document.getElementById('room-code-display').textContent = shortCode(roomCode);
   setMode(mode, broadcastIt);
   
   isEnteringActivity = false;
@@ -268,6 +266,10 @@ if (mode === 'chat'){
        mountChatInSidebar();
        document.getElementById('chat-toggle-wrap').classList.add('visible');   
 }
+const chatActions = document.getElementById('topbar-chat-actions');
+if (chatActions) chatActions.classList.toggle('visible', mode === 'chat');
+const mainCol = document.getElementById('main-col');
+if (mainCol) mainCol.classList.toggle('chat-full-bleed', mode === 'chat');
 if (mode === 'video') renderPlaylistList('video', 'playlist-video-list-inline');
 if (mode === 'music') renderPlaylistList('music', 'playlist-music-list-inline');
 if (mode === 'talk') renderTalkGrid();    
@@ -461,7 +463,9 @@ async function callAiFunction(payload, attempt){
 
 document.getElementById('btn-mic').addEventListener('click', toggleMic);
 document.getElementById('btn-mic-talk').addEventListener('click', toggleMic);
-  ["Why don't scientists trust atoms? Because they make up everything.",
+
+const AI_JOKES = [
+  "Why don't scientists trust atoms? Because they make up everything.",
   "I told my WiFi I loved it. It said the connection isn't stable.",
   "Why did the scarecrow win an award? He was outstanding in his field.",
   "I'm reading a book on anti-gravity. It's impossible to put down.",

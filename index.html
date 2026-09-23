@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Together — watch, listen, play</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;0,700;1,500&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
@@ -113,7 +113,9 @@
         <button class="icon-btn" id="entry-btn-copy" title="Copy room code">⧉</button>
         <button class="icon-btn" id="entry-btn-invite" title="Copy invite link">🔗</button>
       </div>
-      <div style="display:flex; gap:8px;">
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+    <div class="conn-status" id="conn-status" title="Connection status">🟢</div>
+    <button class="icon-btn" id="btn-settings" title="Settings">⚙</button>
     <button class="btn btn-ghost btn-sm" id="entry-btn-profile">👤 Profile</button>
     <button class="btn btn-ghost btn-sm" id="entry-btn-save-room">💾 Save room</button>
     <button class="btn btn-ghost btn-sm" id="entry-btn-leave">Leave</button>
@@ -139,7 +141,7 @@
   </div>
 </div>
     
-    <h2>What are we doing tonight?</h2>
+    <h2>What are we doing this time?</h2>
     <p class="sub">Pick something to get started.</p>
     <div class="hub-grid">
       <div class="hub-card" data-mode="video">
@@ -171,28 +173,15 @@
     <div class="topbar">
       <button class="icon-btn" id="btn-back-to-hub" title="Back to menu">←</button>
       <div class="brand"><span class="brand-dot"></span><span>Together</span></div>
-      <div class="mode-nav">
-        <button class="nav-btn" data-mode="video">🎬 Watch</button>
-        <button class="nav-btn" data-mode="music">🎵 Music</button>
-        <button class="nav-btn" data-mode="games">🎮 Play</button>
-        <button class="nav-btn" data-mode="chat">🗨️ Chat</button>
-        <button class="nav-btn" data-mode="talk">📞 Talk</button>
-      </div>
-      <div class="topbar-right">
-        <div class="roomcode-pill">
-          <span>Room</span>
-          <span class="code mono" id="room-code-display">—</span>
-          <button class="icon-btn" id="btn-copy" title="Copy room code">⧉</button>
-          <button class="icon-btn" id="btn-invite" title="Copy invite link">🔗</button>
-        </div>
-        <div class="conn-status" id="conn-status" title="Connection status">🟢</div>
-        <button class="icon-btn" id="btn-settings" title="Settings">⚙</button>
-        <button class="btn btn-ghost btn-sm" id="btn-leave">Leave</button>
+      <div class="topbar-chat-actions" id="topbar-chat-actions">
+        <button class="icon-btn" id="btn-chat-video-call" type="button" title="Video call — coming soon">📹</button>
+        <button class="icon-btn" id="btn-chat-voice-call" type="button" title="Voice call">📞</button>
+        <button class="icon-btn" id="btn-chat-menu" type="button" title="More">⋮</button>
       </div>
     </div>
 
     <div class="room-body">
-      <div class="main-col">
+      <div class="main-col" id="main-col">
 
         <!-- VIDEO -->
         <div class="pane" id="pane-video">
@@ -435,8 +424,6 @@
         
         <!-- CHAT (full page) -->
         <div class="pane" id="pane-chat">
-          <h3 class="games-heading">💬 Chat</h3>
-          <p class="hint">Everyone in the room, all in one place.</p>
           <div id="chat-page-mount" class="chat-page-mount"></div>
         </div>
 
@@ -481,6 +468,14 @@
               </div>
             </div>
           </div>
+    </div>
+
+    <div class="bottom-nav" id="bottom-nav">
+      <button class="nav-btn" data-mode="video"><span class="nav-icon">🎬</span><span class="nav-label">Watch</span></button>
+      <button class="nav-btn" data-mode="music"><span class="nav-icon">🎵</span><span class="nav-label">Music</span></button>
+      <button class="nav-btn" data-mode="games"><span class="nav-icon">🎮</span><span class="nav-label">Play</span></button>
+      <button class="nav-btn" data-mode="chat"><span class="nav-icon">🗨️</span><span class="nav-label">Chat</span></button>
+      <button class="nav-btn" data-mode="talk"><span class="nav-icon">📞</span><span class="nav-label">Talk</span></button>
     </div>
   </div>
 </div>
