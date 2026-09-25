@@ -1143,6 +1143,144 @@ label{
 .draft-board ol{ margin:0; padding-left:18px; font-size:12.5px; color:#e8fff2; }
 .draft-board ol li{ margin-bottom:4px; }
 
+/* ================= Mind Games — each with its own vibe, no shared card look ================= */
+
+/* ---- Imposter: near-black, cold red, monospace/glitch ---- */
+.imposter-game{
+  background:
+    repeating-linear-gradient(0deg, rgba(255,59,59,0.03) 0px, rgba(255,59,59,0.03) 1px, transparent 1px, transparent 3px),
+    radial-gradient(circle at 50% -10%, #1a0508 0%, #050507 55%);
+  border:1px solid #3a0d14;
+  font-family:'JetBrains Mono', monospace;
+  text-align:center;
+  padding-top:36px; padding-bottom:36px;
+}
+.imposter-game .back-link{ color:#c98f93; }
+.imposter-game .back-link:hover{ color:#ff3b3b; }
+.imp-role{
+  font-size:44px; font-weight:800; color:#ff3b3b; letter-spacing:0.04em;
+  text-shadow:0 0 24px rgba(255,59,59,0.45);
+  margin:0 0 14px; min-height:52px; display:flex; align-items:center; justify-content:center;
+}
+.imp-role--imposter{ font-size:60px; animation:impFlicker 2.2s ease-in-out infinite; }
+.imp-role--caught{ font-size:28px; }
+@keyframes impFlicker{ 0%,100%{opacity:1;} 45%{opacity:1;} 47%{opacity:0.3;} 49%{opacity:1;} 92%{opacity:1;} 94%{opacity:0.4;} 96%{opacity:1;} }
+.imp-lead{ font-size:16px; color:#f3e9ea; margin:0 0 4px; font-weight:700; }
+.imp-sub{ font-size:12.5px; color:#a9838a; margin:0 0 20px; }
+.imp-btn{
+  background:transparent; border:1px solid #ff3b3b; color:#ff3b3b; border-radius:4px;
+  padding:12px 22px; font-family:inherit; font-weight:700; font-size:13px; letter-spacing:0.08em;
+  text-transform:uppercase; cursor:pointer; transition:var(--smooth-transition);
+}
+.imp-btn:hover{ background:rgba(255,59,59,0.12); box-shadow:0 0 20px rgba(255,59,59,0.25); }
+.imp-btn--ghost{ border-color:#5a3d40; color:#c98f93; }
+.imp-btn--ghost:hover{ border-color:#ff3b3b; color:#ff3b3b; }
+.imp-suspects{ display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin:18px 0; }
+.imp-suspect{
+  background:transparent; border:1px solid #4a2226; color:#e8d5d6; border-radius:999px;
+  padding:9px 18px; font-family:inherit; font-size:12.5px; letter-spacing:0.03em; cursor:pointer; transition:var(--smooth-transition);
+}
+.imp-suspect:hover{ border-color:#ff3b3b; color:#fff; }
+.imp-suspect.picked{ background:#ff3b3b; border-color:#ff3b3b; color:#0a0506; font-weight:700; }
+.imp-tally{ font-size:11.5px; color:#7a5458; letter-spacing:0.04em; }
+
+/* ---- Mafia: maroon/charcoal, gold trim, wanted-poster serif ---- */
+.mafia-game{
+  background:linear-gradient(160deg, #2b0f12 0%, #180a0c 60%, #120809 100%);
+  border:2px solid #7a5a20;
+  outline:6px solid #0d0607; outline-offset:-10px;
+  text-align:center;
+  padding-top:34px; padding-bottom:34px;
+}
+.mafia-game .back-link{ color:#c9a877; }
+.mafia-game .back-link:hover{ color:#d4af37; }
+.maf-crest{ font-size:52px; margin:0 0 10px; filter:drop-shadow(0 0 16px rgba(212,175,55,0.4)); }
+.maf-crest--reveal{ font-size:60px; }
+.maf-lead{ font-family:'Fraunces',serif; font-style:italic; font-weight:700; font-size:20px; color:#f3e0b8; margin:0 0 6px; }
+.maf-sub{ font-size:12.5px; color:#c9a877; margin:0 0 18px; }
+.maf-phase-tag{
+  display:inline-block; font-family:'Fraunces',serif; font-style:italic; font-size:13px;
+  letter-spacing:0.06em; color:#d4af37; border:1px solid #7a5a20; border-radius:999px;
+  padding:5px 16px; margin-bottom:16px;
+}
+.maf-phase-tag--night{ background:rgba(20,10,30,0.4); }
+.maf-phase-tag--day{ background:rgba(212,175,55,0.08); }
+.maf-btn{
+  background:linear-gradient(135deg, #d4af37, #a9791f); color:#1a0d05; border:none; border-radius:4px;
+  padding:12px 24px; font-family:'Fraunces',serif; font-weight:700; font-size:14px; font-style:italic;
+  cursor:pointer; box-shadow:0 6px 18px rgba(212,175,55,0.3); transition:transform .15s;
+}
+.maf-btn:hover{ transform:translateY(-2px); }
+.maf-btn--ghost{ background:transparent; border:1px solid #7a5a20; color:#d4af37; box-shadow:none; }
+.maf-btn--ghost:hover{ background:rgba(212,175,55,0.1); }
+.maf-suspects{ display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin:16px 0; }
+.maf-suspect{
+  background:rgba(0,0,0,0.25); border:1px solid #5a3d1a; color:#e8d5a8; border-radius:6px;
+  padding:9px 16px; font-family:'Fraunces',serif; font-size:13px; cursor:pointer; transition:var(--smooth-transition);
+}
+.maf-suspect:hover:not(:disabled){ border-color:#d4af37; color:#fff; }
+.maf-suspect.picked{ background:#d4af37; border-color:#d4af37; color:#1a0d05; font-weight:700; }
+.maf-suspect:disabled{ opacity:0.4; cursor:not-allowed; }
+.maf-tally{ font-size:11.5px; color:#9a7c4e; margin-bottom:14px; }
+.maf-dead-tag{ font-size:12.5px; color:#8a6a6a; font-style:italic; margin-top:10px; }
+
+/* ---- Detective: light sepia parchment, typewriter, pinned corkboard reveal ---- */
+.detective-game{
+  background:linear-gradient(160deg, #ecdfc0 0%, #ddc9a0 100%);
+  border:1px solid #b89a68;
+  text-align:center; color:#3a2a1a;
+  padding-top:32px; padding-bottom:32px;
+}
+.detective-game .back-link{ color:#6a4f2e; }
+.detective-game .back-link:hover{ color:#a83f30; }
+.det-badge{ font-size:46px; margin:0 0 10px; }
+.det-lead{ font-family:'JetBrains Mono', monospace; font-size:14.5px; color:#3a2a1a; margin:0 0 18px; line-height:1.5; }
+.det-case-label{ font-family:'JetBrains Mono', monospace; font-size:11px; letter-spacing:0.18em; color:#8a6a3a; font-weight:700; margin:0 0 8px; }
+.det-crime{ font-family:'JetBrains Mono', monospace; font-size:15.5px; color:#2a1c10; font-weight:700; margin:0 0 22px; line-height:1.5; }
+.det-card{
+  display:inline-block; background:#fdf6e3; border:1px solid #c9ad78; border-radius:2px;
+  padding:16px 22px; margin:0 0 20px; transform:rotate(-1.5deg);
+  box-shadow:3px 4px 10px rgba(58,42,26,0.25); max-width:340px;
+}
+.det-card--guilty{ background:#f7e3e0; border-color:#c97a6e; transform:rotate(1.5deg); }
+.det-card-tag{ font-family:'JetBrains Mono', monospace; font-size:10px; letter-spacing:0.14em; color:#8a6a3a; font-weight:700; margin:0 0 6px; }
+.det-card--guilty .det-card-tag{ color:#a83f30; }
+.det-card-text{ font-family:'JetBrains Mono', monospace; font-size:13.5px; color:#2a1c10; margin:0; line-height:1.5; }
+.det-btn{
+  background:#3a2a1a; color:#ecdfc0; border:none; border-radius:2px; padding:12px 22px;
+  font-family:'JetBrains Mono', monospace; font-weight:700; font-size:12.5px; letter-spacing:0.04em;
+  cursor:pointer; transition:transform .15s;
+}
+.det-btn:hover{ transform:translateY(-2px); }
+.det-btn--ghost{ background:transparent; border:1px solid #8a6a3a; color:#5a4126; }
+.det-btn--ghost:hover{ background:rgba(58,42,26,0.08); }
+.det-suspects{ display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin:16px 0; }
+.det-suspect{
+  background:#fdf6e3; border:1px solid #c9ad78; color:#3a2a1a; border-radius:2px;
+  padding:9px 16px; font-family:'JetBrains Mono', monospace; font-size:12.5px; cursor:pointer; transition:var(--smooth-transition);
+}
+.det-suspect:hover{ border-color:#8a6a3a; box-shadow:2px 3px 6px rgba(58,42,26,0.2); }
+.det-suspect.picked{ background:#3a2a1a; border-color:#3a2a1a; color:#ecdfc0; font-weight:700; }
+.det-tally{ font-family:'JetBrains Mono', monospace; font-size:11px; color:#8a6a3a; margin-bottom:14px; }
+.det-sub{ font-family:'JetBrains Mono', monospace; font-size:12px; color:#6a4f2e; margin:14px 0 0; }
+.det-board{ display:flex; flex-wrap:wrap; gap:16px; justify-content:center; margin:20px 0; }
+.det-pin-card{
+  position:relative; background:#fdf6e3; border:1px solid #c9ad78; border-radius:2px;
+  padding:14px 16px 10px; min-width:100px; transform:rotate(var(--tilt,0deg));
+  box-shadow:3px 4px 10px rgba(58,42,26,0.25);
+}
+.det-pin-card::before{
+  content:""; position:absolute; top:-6px; left:50%; transform:translateX(-50%);
+  width:10px; height:10px; border-radius:50%; background:#a83f30; box-shadow:0 2px 4px rgba(0,0,0,0.3);
+}
+.det-pin-name{ font-family:'JetBrains Mono', monospace; font-size:12.5px; color:#3a2a1a; margin:0; font-weight:700; }
+.det-pin-card--guilty{ background:#f7e3e0; border-color:#c97a6e; }
+.det-pin-stamp{
+  font-family:'Fraunces',serif; font-style:italic; font-weight:800; font-size:13px; color:#a83f30;
+  border:2px solid #a83f30; border-radius:3px; display:inline-block; padding:1px 8px; margin:6px 0 0;
+  transform:rotate(-4deg);
+}
+
 /* ================= Chat page mode ================= */
 .chat-page-mount{ flex:1; display:flex; min-height:0; }
 .chat-page-mount .chat-col{ flex:1; }

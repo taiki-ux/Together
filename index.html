@@ -431,6 +431,33 @@
               <button class="btn draft-start-btn" id="btn-draft-start" type="button">Start the draft</button>
             </div>
           </div>
+
+          <div class="game-panel imposter-game" id="game-imposter" style="display:none;">
+            <button class="back-link" data-back-game type="button">← Games</button>
+            <div id="imposter-body">
+              <div class="imp-role">🕵️</div>
+              <p class="imp-lead">One of you won't know the word. Everyone else does. Talk it out, then vote.</p>
+              <button class="imp-btn" id="btn-imposter-start" type="button">Start a round</button>
+            </div>
+          </div>
+
+          <div class="game-panel mafia-game" id="game-mafia" style="display:none;">
+            <button class="back-link" data-back-game type="button">← Games</button>
+            <div id="mafia-body">
+              <div class="maf-crest">🎭</div>
+              <p class="maf-lead">One of you is Mafia. Nobody else knows who. Survive the night, catch them by day.</p>
+              <button class="maf-btn" id="btn-mafia-start" type="button">Start the game</button>
+            </div>
+          </div>
+
+          <div class="game-panel detective-game" id="game-detective" style="display:none;">
+            <button class="back-link" data-back-game type="button">← Games</button>
+            <div id="detective-body">
+              <div class="det-badge">🔍</div>
+              <p class="det-lead">A case breaks open. One of you did it — everyone else gets a clue. Question each other, then accuse.</p>
+              <button class="det-btn" id="btn-detective-start" type="button">Open a case</button>
+            </div>
+          </div>
         </div>
         
         <!-- CHAT (full page) -->

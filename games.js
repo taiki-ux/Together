@@ -28,7 +28,7 @@ const GAME_CATALOG = [
   {key:'puzzles', emoji:'🧩', name:'Puzzles', games:[
     {name:'Riddles', status:'soon'}, {name:'Word Scramble', status:'soon'}, {name:'Memory Match', status:'soon'}]},
   {key:'mindgames', emoji:'🧠', name:'Mind Games', games:[
-    {name:'Imposter', status:'soon'}, {name:'Mafia', status:'soon'}, {name:'Detective', status:'soon'}]},
+    {name:'Imposter', status:'ready', panelId:'imposter'}, {name:'Mafia', status:'ready', panelId:'mafia'}, {name:'Detective', status:'ready', panelId:'detective'}]},
   {key:'reaction', emoji:'⚡', name:'Reaction & Speed', games:[
     {name:'Reaction Battle', status:'soon'}, {name:'Quick Draw', status:'soon'}, {name:'Fastest Typist', status:'soon'}]},
   {key:'competitive', emoji:'🏆', name:'Competitive', games:[
@@ -124,7 +124,7 @@ function openGame(id){
 }
 function closeGame(){
   document.getElementById('category-detail').style.display='block';
-  ['trivia','wyr','ttt','tot','woa','ttl','tod','mlt','draft','connect4','guess'].forEach(g=> document.getElementById('game-'+g).style.display='none');
+  ['trivia','wyr','ttt','tot','woa','ttl','tod','mlt','draft','connect4','guess','imposter','mafia','detective'].forEach(g=> document.getElementById('game-'+g).style.display='none');
 }
 
 /* ---------------- Trivia ---------------- */
@@ -739,6 +739,9 @@ document.getElementById('btn-ttl-turn').addEventListener('click', ttlStartTurn);
 document.getElementById('btn-tod-spin').addEventListener('click', ()=> todSpin(true));
 document.getElementById('btn-mlt-start').addEventListener('click', ()=> mltNext(true));
 document.getElementById('btn-draft-start').addEventListener('click', draftStart);
+document.getElementById('btn-imposter-start').addEventListener('click', imposterStart);
+document.getElementById('btn-mafia-start').addEventListener('click', mafiaStart);
+document.getElementById('btn-detective-start').addEventListener('click', detectiveStart);
 
 /* ---------------- Two Truths & a Lie (Chill) ---------------- */
 let ttlState = { active:false, submitterId:null, statements:[], guesses:{}, revealed:false, correctIndex:null };
@@ -1174,4 +1177,462 @@ function renderGuessScoreboard(){
     const name = pid===myId ? 'You' : (participants[pid]?.name || '…');
     return `<div class="score-row"><span>${escapeHtml(name)}</span><b>${score}</b></div>`;
   }).join('');
+}
+/* ================================================================
+   MIND GAMES — Imposter, Mafia, Detective
+   Each one gets its own full background/vibe (see style.css) instead
+   of sitting inside the shared .game-panel card like the rest of the
+   catalog. Same peer-to-peer patterns as the rest of this file:
+   sendData() for a private role reveal, broadcast() for public phase/
+   vote messages, and a host (or, for Mafia, the Mafia player itself)
+   as the one authoritative source for anything that has to stay secret.
+   ================================================================ */
+
+/* ---------------- Imposter ---------------- */
+const IMPOSTER_WORDS = [
+  "Pizza","Beach vacation","Astronaut","Wedding","Roller coaster","Sushi",
+  "Waterfall","Birthday party","Guitar","Smartphone","Campfire","Library",
+  "Volcano","Circus","Snowstorm","Coffee shop","Submarine","Treasure map",
+  "Magic trick","Road trip","Haunted house","Farmers market"
+];
+let imposterState = { active:false, roundId:null, hostId:null, myWord:null, isImposter:false, phase:'lobby', order:[], votes:{}, imposterId:null, word:null };
+let imposterRoundCounter = 0;
+
+function imposterStart(){
+  const order = Object.keys(participants);
+  if (order.length < 3){ toast('Need at least 3 people in the room to play Imposter'); return; }
+  const word = IMPOSTER_WORDS[Math.floor(Math.random()*IMPOSTER_WORDS.length)];
+  const imposterId = order[Math.floor(Math.random()*order.length)];
+  const roundId = 'imp' + (imposterRoundCounter++) + '-' + Date.now();
+  order.forEach(id=>{
+    if (id === myId){
+      imposterState = { active:true, roundId, hostId:myId, myWord: id===imposterId?null:word, isImposter:id===imposterId, phase:'reveal', order, votes:{}, imposterId, word };
+    } else {
+      sendData(dataConns[id], { type:'imposter', action:'assign', roundId, order, hostId:myId, word: id===imposterId ? null : word, isImposter: id===imposterId });
+    }
+  });
+  renderImposter();
+}
+registerHandler('imposter', (fromId, data)=>{
+  if (data.action==='assign'){
+    imposterState = { active:true, roundId:data.roundId, hostId:data.hostId, myWord:data.word, isImposter:data.isImposter, phase:'reveal', order:data.order, votes:{}, imposterId:null, word:null };
+    renderImposter();
+  } else if (data.action==='phase'){
+    if (data.roundId !== imposterState.roundId) return;
+    imposterState.phase = data.phase;
+    renderImposter();
+  } else if (data.action==='vote'){
+    if (data.roundId !== imposterState.roundId) return;
+    imposterState.votes[data.peerId] = data.voteFor;
+    renderImposter();
+  } else if (data.action==='reveal'){
+    if (data.roundId !== imposterState.roundId) return;
+    imposterState.phase = 'results';
+    imposterState.imposterId = data.imposterId;
+    imposterState.word = data.word;
+    renderImposter();
+  }
+});
+function imposterGoToVote(){
+  imposterState.phase = 'vote';
+  broadcast({ type:'imposter', action:'phase', roundId:imposterState.roundId, phase:'vote' });
+  renderImposter();
+}
+function imposterCastVote(forId){
+  imposterState.votes[myId] = forId;
+  broadcast({ type:'imposter', action:'vote', roundId:imposterState.roundId, peerId:myId, voteFor:forId });
+  renderImposter();
+}
+function imposterReveal(){
+  broadcast({ type:'imposter', action:'reveal', roundId:imposterState.roundId, imposterId:imposterState.imposterId, word:imposterState.word });
+  imposterState.phase = 'results';
+  renderImposter();
+}
+function renderImposter(){
+  const body = document.getElementById('imposter-body');
+  if (!body) return;
+  if (!imposterState.active){
+    body.innerHTML = `
+      <div class="imp-role">🕵️</div>
+      <p class="imp-lead">One of you won't know the word. Everyone else does. Talk it out, then vote.</p>
+      <button class="imp-btn" id="btn-imposter-start" type="button">Start a round</button>
+    `;
+    document.getElementById('btn-imposter-start').addEventListener('click', imposterStart);
+    return;
+  }
+  const isHost = imposterState.hostId === myId;
+  if (imposterState.phase === 'reveal'){
+    body.innerHTML = imposterState.isImposter ? `
+      <div class="imp-role imp-role--imposter">?</div>
+      <p class="imp-lead">You don't know the word.</p>
+      <p class="imp-sub">Everyone else does. Listen close, bluff hard, don't get caught.</p>
+      <button class="imp-btn" id="btn-imposter-vote" type="button">Everyone's ready — start voting</button>
+    ` : `
+      <div class="imp-role">${escapeHtml(imposterState.myWord)}</div>
+      <p class="imp-lead">That's the word.</p>
+      <p class="imp-sub">One person in this room doesn't know it. Find them.</p>
+      <button class="imp-btn" id="btn-imposter-vote" type="button">Everyone's ready — start voting</button>
+    `;
+    document.getElementById('btn-imposter-vote').addEventListener('click', imposterGoToVote);
+    return;
+  }
+  if (imposterState.phase === 'vote'){
+    const myVote = imposterState.votes[myId];
+    body.innerHTML = `
+      <p class="imp-lead">Who doesn't know the word?</p>
+      <div class="imp-suspects">
+        ${imposterState.order.map(id=>`<button class="imp-suspect ${myVote===id?'picked':''}" data-vote="${id}">${escapeHtml(id===myId?'You':(participants[id]?.name||'…'))}</button>`).join('')}
+      </div>
+      <p class="imp-tally">${Object.keys(imposterState.votes).length} of ${imposterState.order.length} have voted</p>
+      ${isHost ? `<button class="imp-btn imp-btn--ghost" id="btn-imposter-reveal" type="button">Reveal the imposter</button>` : `<p class="imp-sub">Waiting on the host to reveal…</p>`}
+    `;
+    body.querySelectorAll('[data-vote]').forEach(btn=> btn.addEventListener('click', ()=> imposterCastVote(btn.dataset.vote)));
+    if (isHost) document.getElementById('btn-imposter-reveal').addEventListener('click', imposterReveal);
+    return;
+  }
+  if (imposterState.phase === 'results'){
+    const correct = Object.values(imposterState.votes).filter(v=>v===imposterState.imposterId).length;
+    body.innerHTML = `
+      <p class="imp-lead">The imposter was…</p>
+      <div class="imp-role imp-role--caught">${escapeHtml(imposterState.imposterId===myId?'You':(participants[imposterState.imposterId]?.name||'…'))}</div>
+      <p class="imp-sub">The word was <b>${escapeHtml(imposterState.word)}</b> · ${correct} of ${imposterState.order.length} guessed right</p>
+      <button class="imp-btn" id="btn-imposter-again" type="button">Play again</button>
+    `;
+    document.getElementById('btn-imposter-again').addEventListener('click', imposterStart);
+  }
+}
+
+/* ---------------- Mafia ---------------- */
+let mafiaState = { active:false, roundId:null, hostId:null, order:[], alive:{}, isMafia:false, mafiaId:null, phase:'lobby', dayNum:1, lastVictim:null, lastLynched:null, votes:{}, result:null, _advanceTimer:null };
+let mafiaRoundCounter = 0;
+
+function mafiaAliveIds(){ return mafiaState.order.filter(id=> mafiaState.alive[id]); }
+
+function mafiaStart(){
+  const order = Object.keys(participants);
+  if (order.length < 3){ toast('Need at least 3 people in the room to play Mafia'); return; }
+  const mafiaId = order[Math.floor(Math.random()*order.length)];
+  const roundId = 'maf' + (mafiaRoundCounter++) + '-' + Date.now();
+  const alive = {}; order.forEach(id=> alive[id]=true);
+  clearTimeout(mafiaState._advanceTimer);
+  order.forEach(id=>{
+    if (id === myId){
+      mafiaState = { active:true, roundId, hostId:myId, order, alive:{...alive}, isMafia:id===mafiaId, mafiaId, phase:'night', dayNum:1, lastVictim:null, lastLynched:null, votes:{}, result:null, _advanceTimer:null };
+    } else {
+      sendData(dataConns[id], { type:'mafia', action:'assign', roundId, order, hostId:myId, isMafia:id===mafiaId });
+    }
+  });
+  renderMafia();
+}
+registerHandler('mafia', (fromId, data)=>{
+  if (data.action==='assign'){
+    const alive = {}; data.order.forEach(id=> alive[id]=true);
+    clearTimeout(mafiaState._advanceTimer);
+    mafiaState = { active:true, roundId:data.roundId, hostId:data.hostId, order:data.order, alive, isMafia:data.isMafia, mafiaId: data.isMafia?myId:null, phase:'night', dayNum:1, lastVictim:null, lastLynched:null, votes:{}, result:null, _advanceTimer:null };
+    renderMafia();
+  } else if (data.action==='night-result'){
+    if (data.roundId !== mafiaState.roundId) return;
+    mafiaState.alive[data.victim] = false;
+    mafiaState.lastVictim = data.victim;
+    mafiaState.dayNum = data.dayNum;
+    mafiaState.phase = data.gameOver ? 'results' : 'day-discuss';
+    if (data.gameOver){ mafiaState.result = data.result; mafiaState.mafiaId = data.mafiaId; }
+    renderMafia();
+  } else if (data.action==='phase'){
+    if (data.roundId !== mafiaState.roundId) return;
+    mafiaState.phase = data.phase;
+    mafiaState.votes = {};
+    renderMafia();
+  } else if (data.action==='vote'){
+    if (data.roundId !== mafiaState.roundId) return;
+    mafiaState.votes[data.peerId] = data.voteFor;
+    renderMafia();
+  } else if (data.action==='resolve-lynch'){
+    if (data.roundId !== mafiaState.roundId) return;
+    mafiaResolveLynch();
+  } else if (data.action==='reveal'){
+    if (data.roundId !== mafiaState.roundId) return;
+    clearTimeout(mafiaState._advanceTimer);
+    mafiaState.phase = 'results';
+    mafiaState.result = data.result;
+    mafiaState.mafiaId = data.mafiaId;
+    renderMafia();
+  }
+});
+function mafiaNightPick(targetId){
+  if (!mafiaState.isMafia || mafiaState.phase!=='night') return;
+  mafiaState.alive[targetId] = false;
+  const townAlive = mafiaAliveIds().filter(id=> id!==myId).length;
+  const gameOver = townAlive <= 1;
+  mafiaState.lastVictim = targetId;
+  mafiaState.phase = gameOver ? 'results' : 'day-discuss';
+  if (gameOver){ mafiaState.result = 'mafia'; mafiaState.mafiaId = myId; }
+  broadcast({ type:'mafia', action:'night-result', roundId:mafiaState.roundId, victim:targetId, dayNum:mafiaState.dayNum, gameOver, result: gameOver?'mafia':null, mafiaId: gameOver?myId:null });
+  renderMafia();
+}
+function mafiaOpenVote(){
+  mafiaState.phase = 'day-vote';
+  mafiaState.votes = {};
+  broadcast({ type:'mafia', action:'phase', roundId:mafiaState.roundId, phase:'day-vote' });
+  renderMafia();
+}
+function mafiaCastVote(forId){
+  if (!mafiaState.alive[myId]) return;
+  mafiaState.votes[myId] = forId;
+  broadcast({ type:'mafia', action:'vote', roundId:mafiaState.roundId, peerId:myId, voteFor:forId });
+  renderMafia();
+}
+function mafiaTally(){
+  broadcast({ type:'mafia', action:'resolve-lynch', roundId:mafiaState.roundId });
+  mafiaResolveLynch();
+}
+function mafiaResolveLynch(){
+  const tally = {};
+  Object.values(mafiaState.votes).forEach(id=> tally[id]=(tally[id]||0)+1);
+  const entries = Object.entries(tally).sort((a,b)=>b[1]-a[1]);
+  if (!entries.length){
+    mafiaState.phase = 'night'; mafiaState.dayNum++; mafiaState.votes = {};
+    renderMafia();
+    return;
+  }
+  const eliminated = entries[0][0];
+  mafiaState.alive[eliminated] = false;
+  mafiaState.lastLynched = eliminated;
+  if (mafiaState.isMafia && eliminated === myId){
+    mafiaState.phase = 'results'; mafiaState.result = 'town'; mafiaState.mafiaId = myId;
+    broadcast({ type:'mafia', action:'reveal', roundId:mafiaState.roundId, mafiaId:myId, result:'town' });
+    renderMafia();
+    return;
+  }
+  mafiaState.phase = 'day-result';
+  renderMafia();
+  clearTimeout(mafiaState._advanceTimer);
+  mafiaState._advanceTimer = setTimeout(()=>{
+    if (mafiaState.phase !== 'day-result') return; // a reveal already arrived
+    mafiaState.phase = 'night'; mafiaState.dayNum++; mafiaState.votes = {};
+    renderMafia();
+  }, 2200);
+}
+function renderMafia(){
+  const body = document.getElementById('mafia-body');
+  if (!body) return;
+  if (!mafiaState.active){
+    body.innerHTML = `
+      <div class="maf-crest">🎭</div>
+      <p class="maf-lead">One of you is Mafia. Nobody else knows who. Survive the night, catch them by day.</p>
+      <button class="maf-btn" id="btn-mafia-start" type="button">Start the game</button>
+    `;
+    document.getElementById('btn-mafia-start').addEventListener('click', mafiaStart);
+    return;
+  }
+  const aliveIds = mafiaAliveIds();
+  const iAmAlive = !!mafiaState.alive[myId];
+
+  if (mafiaState.phase === 'night'){
+    if (mafiaState.isMafia){
+      const targets = aliveIds.filter(id=> id!==myId);
+      body.innerHTML = `
+        <div class="maf-phase-tag maf-phase-tag--night">🌙 Night ${mafiaState.dayNum}</div>
+        <p class="maf-lead">Choose who disappears tonight.</p>
+        <div class="maf-suspects">
+          ${targets.map(id=>`<button class="maf-suspect" data-kill="${id}">${escapeHtml(participants[id]?.name||'…')}</button>`).join('') || '<p class="maf-sub">No one left to target.</p>'}
+        </div>
+      `;
+      body.querySelectorAll('[data-kill]').forEach(btn=> btn.addEventListener('click', ()=> mafiaNightPick(btn.dataset.kill)));
+    } else {
+      body.innerHTML = `
+        <div class="maf-phase-tag maf-phase-tag--night">🌙 Night ${mafiaState.dayNum}</div>
+        <p class="maf-lead">The town sleeps.</p>
+        <p class="maf-sub">Somewhere out there, the Mafia is choosing.</p>
+        ${!iAmAlive ? '<p class="maf-dead-tag">👻 You were eliminated — watch quietly.</p>' : ''}
+      `;
+    }
+    return;
+  }
+  if (mafiaState.phase === 'day-discuss'){
+    body.innerHTML = `
+      <div class="maf-phase-tag maf-phase-tag--day">☀️ Day ${mafiaState.dayNum}</div>
+      <p class="maf-lead"><b>${escapeHtml(participants[mafiaState.lastVictim]?.name||'Someone')}</b> was found eliminated overnight.</p>
+      <p class="maf-sub">Talk it out over voice, then open the floor.</p>
+      ${iAmAlive ? '<button class="maf-btn" id="btn-mafia-open-vote" type="button">Open the vote</button>' : '<p class="maf-dead-tag">👻 You were eliminated — watch quietly.</p>'}
+    `;
+    if (iAmAlive) document.getElementById('btn-mafia-open-vote').addEventListener('click', mafiaOpenVote);
+    return;
+  }
+  if (mafiaState.phase === 'day-vote'){
+    const myVote = mafiaState.votes[myId];
+    body.innerHTML = `
+      <div class="maf-phase-tag maf-phase-tag--day">☀️ Day ${mafiaState.dayNum} · Vote</div>
+      <p class="maf-lead">Who do you think is Mafia?</p>
+      <div class="maf-suspects">
+        ${aliveIds.map(id=>`<button class="maf-suspect ${myVote===id?'picked':''}" data-vote="${id}" ${iAmAlive?'':'disabled'}>${escapeHtml(id===myId?'You':(participants[id]?.name||'…'))}</button>`).join('')}
+      </div>
+      <p class="maf-tally">${Object.keys(mafiaState.votes).length} of ${aliveIds.length} alive have voted</p>
+      ${iAmAlive ? '<button class="maf-btn maf-btn--ghost" id="btn-mafia-tally" type="button">Tally the vote</button>' : '<p class="maf-dead-tag">👻 You were eliminated — watch quietly.</p>'}
+    `;
+    body.querySelectorAll('[data-vote]').forEach(btn=> btn.addEventListener('click', ()=> mafiaCastVote(btn.dataset.vote)));
+    if (iAmAlive) document.getElementById('btn-mafia-tally').addEventListener('click', mafiaTally);
+    return;
+  }
+  if (mafiaState.phase === 'day-result'){
+    body.innerHTML = `
+      <div class="maf-phase-tag maf-phase-tag--day">☀️ Day ${mafiaState.dayNum}</div>
+      <p class="maf-lead"><b>${escapeHtml(participants[mafiaState.lastLynched]?.name||'Someone')}</b> was voted out…</p>
+      <p class="maf-sub">Were they Mafia? Night falls again either way.</p>
+    `;
+    return;
+  }
+  if (mafiaState.phase === 'results'){
+    const won = mafiaState.result === 'town' ? 'Town' : 'Mafia';
+    body.innerHTML = `
+      <div class="maf-crest maf-crest--reveal">${won === 'Town' ? '🏆' : '🎭'}</div>
+      <p class="maf-lead">${won} wins!</p>
+      <p class="maf-sub">The Mafia was <b>${escapeHtml(mafiaState.mafiaId===myId?'You':(participants[mafiaState.mafiaId]?.name||'…'))}</b></p>
+      <button class="maf-btn" id="btn-mafia-again" type="button">Play again</button>
+    `;
+    document.getElementById('btn-mafia-again').addEventListener('click', mafiaStart);
+  }
+}
+
+/* ---------------- Detective ---------------- */
+const DETECTIVE_CASES = [
+  { crime:"Someone ate the last slice of cake from the office fridge.", clues:[
+    "You were seen near the kitchen right when it happened.",
+    "You have crumbs on your sleeve you can't explain.",
+    "You left the room right before the cake vanished.",
+    "Your fork was in the sink, freshly rinsed.",
+    "You changed the subject fast when cake came up.",
+    "You've been suspiciously quiet about dessert all day."] },
+  { crime:"The thermostat keeps getting changed to 85°F overnight.", clues:[
+    "You've been wearing short sleeves indoors lately.",
+    "You were the last one to leave last night.",
+    "You complained about the cold earlier today.",
+    "Your phone shows you checked the weather app at 2am.",
+    "You know the thermostat's passcode.",
+    "You've mentioned hating air conditioning before."] },
+  { crime:"Someone rearranged all the furniture as a 'prank.'", clues:[
+    "You've got a suspicious amount of free time lately.",
+    "You were humming while everyone else was confused.",
+    "You knew exactly where everything ended up.",
+    "You 'happened' to have your phone out recording reactions.",
+    "You've pulled a prank like this before.",
+    "You offered to help 'put it back' a little too quickly."] }
+];
+let detState = { active:false, roundId:null, hostId:null, order:[], culpritId:null, isCulprit:false, myClue:null, crime:null, phase:'lobby', votes:{} };
+let detRoundCounter = 0;
+
+function detectiveStart(){
+  const order = Object.keys(participants);
+  if (order.length < 3){ toast('Need at least 3 people in the room to open a case'); return; }
+  const c = DETECTIVE_CASES[Math.floor(Math.random()*DETECTIVE_CASES.length)];
+  const culpritId = order[Math.floor(Math.random()*order.length)];
+  const roundId = 'det' + (detRoundCounter++) + '-' + Date.now();
+  const clueOrder = shuffledOrder(c.clues.length);
+  let ci = 0;
+  order.forEach(id=>{
+    const clue = id===culpritId ? null : c.clues[clueOrder[(ci++) % c.clues.length]];
+    if (id === myId){
+      detState = { active:true, roundId, hostId:myId, order, culpritId, isCulprit:id===culpritId, myClue:clue, crime:c.crime, phase:'briefing', votes:{} };
+    } else {
+      sendData(dataConns[id], { type:'detective', action:'assign', roundId, order, hostId:myId, crime:c.crime, isCulprit:id===culpritId, clue });
+    }
+  });
+  renderDetective();
+}
+registerHandler('detective', (fromId, data)=>{
+  if (data.action==='assign'){
+    detState = { active:true, roundId:data.roundId, hostId:data.hostId, order:data.order, culpritId:null, isCulprit:data.isCulprit, myClue:data.clue, crime:data.crime, phase:'briefing', votes:{} };
+    renderDetective();
+  } else if (data.action==='phase'){
+    if (data.roundId !== detState.roundId) return;
+    detState.phase = data.phase;
+    renderDetective();
+  } else if (data.action==='vote'){
+    if (data.roundId !== detState.roundId) return;
+    detState.votes[data.peerId] = data.voteFor;
+    renderDetective();
+  } else if (data.action==='reveal'){
+    if (data.roundId !== detState.roundId) return;
+    detState.culpritId = data.culpritId;
+    detState.phase = 'results';
+    renderDetective();
+  }
+});
+function detectiveOpenVote(){
+  detState.phase = 'vote';
+  broadcast({ type:'detective', action:'phase', roundId:detState.roundId, phase:'vote' });
+  renderDetective();
+}
+function detectiveCastVote(forId){
+  detState.votes[myId] = forId;
+  broadcast({ type:'detective', action:'vote', roundId:detState.roundId, peerId:myId, voteFor:forId });
+  renderDetective();
+}
+function detectiveReveal(){
+  broadcast({ type:'detective', action:'reveal', roundId:detState.roundId, culpritId:detState.culpritId });
+  detState.phase = 'results';
+  renderDetective();
+}
+function renderDetective(){
+  const body = document.getElementById('detective-body');
+  if (!body) return;
+  if (!detState.active){
+    body.innerHTML = `
+      <div class="det-badge">🔍</div>
+      <p class="det-lead">A case breaks open. One of you did it — everyone else gets a clue. Question each other, then accuse.</p>
+      <button class="det-btn" id="btn-detective-start" type="button">Open a case</button>
+    `;
+    document.getElementById('btn-detective-start').addEventListener('click', detectiveStart);
+    return;
+  }
+  const isHost = detState.hostId === myId;
+  if (detState.phase === 'briefing'){
+    body.innerHTML = `
+      <p class="det-case-label">THE CASE</p>
+      <p class="det-crime">${escapeHtml(detState.crime)}</p>
+      <div class="det-card ${detState.isCulprit?'det-card--guilty':''}">
+        ${detState.isCulprit
+          ? `<p class="det-card-tag">YOUR ROLE</p><p class="det-card-text">You did it. Deny everything — convincingly.</p>`
+          : `<p class="det-card-tag">YOUR ALIBI</p><p class="det-card-text">${escapeHtml(detState.myClue)}</p>`}
+      </div>
+      <p class="det-sub">Question everyone. When you're ready, open the floor to accusations.</p>
+      ${isHost ? `<button class="det-btn" id="btn-detective-vote" type="button">Open the floor for accusations</button>` : `<p class="det-sub">Waiting on the host to open the floor…</p>`}
+    `;
+    if (isHost) document.getElementById('btn-detective-vote').addEventListener('click', detectiveOpenVote);
+    return;
+  }
+  if (detState.phase === 'vote'){
+    const myVote = detState.votes[myId];
+    body.innerHTML = `
+      <p class="det-case-label">WHO DID IT?</p>
+      <div class="det-suspects">
+        ${detState.order.map(id=>`<button class="det-suspect ${myVote===id?'picked':''}" data-vote="${id}">${escapeHtml(id===myId?'You':(participants[id]?.name||'…'))}</button>`).join('')}
+      </div>
+      <p class="det-tally">${Object.keys(detState.votes).length} of ${detState.order.length} have accused someone</p>
+      ${isHost ? `<button class="det-btn det-btn--ghost" id="btn-detective-reveal" type="button">Close the case</button>` : `<p class="det-sub">Waiting on the host to close the case…</p>`}
+    `;
+    body.querySelectorAll('[data-vote]').forEach(btn=> btn.addEventListener('click', ()=> detectiveCastVote(btn.dataset.vote)));
+    if (isHost) document.getElementById('btn-detective-reveal').addEventListener('click', detectiveReveal);
+    return;
+  }
+  if (detState.phase === 'results'){
+    const correct = Object.values(detState.votes).filter(v=>v===detState.culpritId).length;
+    body.innerHTML = `
+      <p class="det-case-label">CASE CLOSED</p>
+      <p class="det-crime">${escapeHtml(detState.crime)}</p>
+      <div class="det-board">
+        ${detState.order.map((id,i)=>{
+          const guilty = id===detState.culpritId;
+          const tilt = (i%2?1:-1)*(2+(i*7)%5);
+          return `<div class="det-pin-card ${guilty?'det-pin-card--guilty':''}" style="--tilt:${tilt}deg">
+            <p class="det-pin-name">${escapeHtml(id===myId?'You':(participants[id]?.name||'…'))}</p>
+            ${guilty ? '<p class="det-pin-stamp">GUILTY</p>' : ''}
+          </div>`;
+        }).join('')}
+      </div>
+      <p class="det-sub">${correct} of ${detState.order.length} named the right person</p>
+      <button class="det-btn" id="btn-detective-again" type="button">Open another case</button>
+    `;
+    document.getElementById('btn-detective-again').addEventListener('click', detectiveStart);
+  }
 }
