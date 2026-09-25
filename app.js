@@ -137,7 +137,7 @@ function setLandingLoading(loading){
 window.onPeerError = (msg)=>{ setLandingLoading(false); showLandingStatus(msg, true); };
 
 window.onConnectionStatus = function(state){
-     const pill = document.getElementById('conn-status');
+     const pill = document.getElementById('entry-conn-status');
         if (!pill) return;
            if (state === 'connected'){ pill.textContent = '🟢'; pill.title = 'Connected'; }
               else if (state === 'reconnecting'){ pill.textContent = '🟡'; pill.title = 'Reconnecting…'; toast('Connection dropped — reconnecting…', 'err'); }
@@ -203,7 +203,11 @@ document.getElementById('btn-back-to-hub').addEventListener('click', ()=>{
   document.getElementById('entry-hub').style.display='flex';
   window.scrollTo(0,0);
 });
-document.getElementById('btn-chat-video-call').addEventListener('click', ()=> toast('Video calling is coming soon 📹'));
+document.getElementById('btn-chat-video-call').addEventListener('click', ()=>{
+  setMode('talk', false);
+  if (!micOn) toggleMic();
+  if (!camOn) startCamera();
+});
 document.getElementById('btn-chat-voice-call').addEventListener('click', ()=> setMode('talk', false));
 document.getElementById('btn-chat-menu').addEventListener('click', ()=> toast('More options coming soon'));
 
@@ -272,7 +276,9 @@ const mainCol = document.getElementById('main-col');
 if (mainCol) mainCol.classList.toggle('chat-full-bleed', mode === 'chat');
 if (mode === 'video') renderPlaylistList('video', 'playlist-video-list-inline');
 if (mode === 'music') renderPlaylistList('music', 'playlist-music-list-inline');
-if (mode === 'talk') renderTalkGrid();    
+if (mode === 'talk') renderTalkGrid();
+placeVideos();
+    
 
 if (broadcastIt && SHARED_MODES.includes(mode)) broadcast({type:'mode', mode}); 
 // Personal "what am I up to" status — distinct from the shared-mode broadcast
@@ -295,9 +301,13 @@ async function renderPlaylistList(kind, containerId){
 
   el.innerHTML = items.map(it => `
     <div class="playlist-item">
-      <span title="${escapeHtml(it.title)}">${escapeHtml(it.title)}</span>
+      <img class="playlist-thumb" src="${thumbUrl(it.video_id)}" alt="" loading="lazy">
+      <div class="playlist-info">
+        <div class="playlist-title" data-title-for="${it.id}">${escapeHtml(isUrlish(it.title) ? 'Loading title…' : it.title)}</div>
+        <div class="playlist-sub">${kind === 'music' ? '🎵 Song' : '🎬 Video'}</div>
+      </div>
       <span class="playlist-actions">
-        <button class="btn btn-secondary btn-sm" data-load="${it.video_id}" data-kind="${kind}" data-title="${escapeHtml(it.title)}" type="button">▶ Play</button>
+        <button class="btn btn-secondary btn-sm" data-load="${it.video_id}" data-kind="${kind}" type="button">▶ Play</button>
         <button class="icon-btn" data-remove="${it.id}" data-kind="${kind}" type="button" title="Remove">🗑</button>
       </span>
     </div>
@@ -305,11 +315,8 @@ async function renderPlaylistList(kind, containerId){
 
   el.querySelectorAll('[data-load]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
-      // Routes through the shared queue (Phase 2), same as search results and
-      // paste-link — keeps every way of loading something consistent.
-      if (typeof playNow === 'function') playNow(btn.dataset.kind, btn.dataset.load, btn.dataset.title);
-      else YTSync.load(btn.dataset.kind, btn.dataset.load);
-      setMode(btn.dataset.kind, true); // jump everyone to Watch/Music so they can see/hear it
+      YTSync.load(btn.dataset.kind, btn.dataset.load);
+      setMode(btn.dataset.kind, true);
     });
   });
   el.querySelectorAll('[data-remove]').forEach(btn=>{
@@ -319,29 +326,43 @@ async function renderPlaylistList(kind, containerId){
       renderPlaylistList(btn.dataset.kind, containerId);
     });
   });
+
+  // Old saves that only stored a link: look up the real name and fix them
+  items.filter(it => isUrlish(it.title)).forEach(async it=>{
+    const t = (await fetchVideoTitle(it.video_id)) || 'YouTube video';
+    const node = el.querySelector(`[data-title-for="${it.id}"]`);
+    if (node) node.textContent = t;
+    if (t !== 'YouTube video') updateFavoriteTitle(it.id, t);
+  });
 }
 
 function renderTalkGrid(){
-   const grid = document.getElementById('talk-grid'); 
-   if (!grid) return;   
-   grid.innerHTML = '';   
-   Object.keys(participants).forEach(id=>{ 
-     const p = participants[id];  
-     const tile = document.createElement('div'); tile.className = 'talk-tile';     
-     const av = document.createElement('div'); av.className = 'avatar talk-avatar'; av.dataset.peer = id;     
-     av.style.background = nameColor(p.name || '?'); av.textContent = initials(p.name);     
-     if (speakingState[id]) av.classList.add('speaking');     
-     av.style.cursor = 'pointer';
-     av.addEventListener('click', ()=>{ if (typeof openProfileForPeer === 'function') openProfileForPeer(id); });
-     tile.appendChild(av);     
-     const nm = document.createElement('div'); nm.className = 'talk-name'; nm.textContent = (id === myId ? 'You' : p.name);     
-     tile.appendChild(nm);     
-     const micState = document.createElement('div'); micState.className = 'talk-mic-state';     
-     micState.textContent = p.muted === false ? '🎤 On' : '🔇 Off';     
-     tile.appendChild(micState);     
-     if (typeof buildVoiceControlsForTile === 'function') tile.appendChild(buildVoiceControlsForTile(id));
-     grid.appendChild(tile);
-   }); 
+  const grid = document.getElementById('talk-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+  Object.keys(participants).forEach(id=>{
+    const p = participants[id];
+    const tile = document.createElement('div'); tile.className = 'talk-tile';
+    tile.dataset.id = id;
+
+    const slot = document.createElement('div'); slot.className = 'video-slot';
+    tile.appendChild(slot);
+
+    const av = document.createElement('div'); av.className = 'avatar talk-avatar'; av.dataset.peer = id;
+    av.style.background = nameColor(p.name || '?'); av.textContent = initials(p.name);
+    if (speakingState[id]) av.classList.add('speaking');
+    tile.appendChild(av);
+
+    const nm = document.createElement('div'); nm.className = 'talk-name'; nm.textContent = (id === myId ? 'You' : p.name);
+    tile.appendChild(nm);
+
+    const micState = document.createElement('div'); micState.className = 'talk-mic-state';
+    micState.textContent = p.muted === false ? '🎤 On' : '🔇 Off';
+    tile.appendChild(micState);
+
+    grid.appendChild(tile);
+  });
+  placeVideos();
 }
 window.onOrbitRender = (function(prev){ return function(){ if (prev) prev(); renderTalkGrid(); }; })(window.onOrbitRender);
 window.onRemoteMode = (mode)=> setMode(mode, false);
@@ -583,11 +604,11 @@ function playChime(){
   }catch(e){}
 }
 
-document.getElementById('btn-settings').addEventListener('click', ()=>{
+function openSettings(){
   document.getElementById('settings-overlay').style.display='flex';
   document.getElementById('settings-account-desc').textContent = `${myProfile.first_name} ${myProfile.last_name} · @${myProfile.username}`;
   populateMicSelect();
-});
+}
 document.getElementById('btn-settings-close').addEventListener('click', ()=>{ document.getElementById('settings-overlay').style.display='none'; });
 document.getElementById('settings-overlay').addEventListener('click', e=>{ if (e.target.id==='settings-overlay') e.currentTarget.style.display='none'; });
 
@@ -749,3 +770,51 @@ if (landingLogout) {
     toast('Logged out');
   });
 }
+
+document.getElementById('btn-stop-video').addEventListener('click', ()=> YTSync.stop('video'));
+document.getElementById('btn-stop-music').addEventListener('click', ()=>{
+  YTSync.stop('music');
+  const a = document.getElementById('local-audio-player'); // also stops a file playing just for you
+  if (a && a.style.display !== 'none'){ a.pause(); a.currentTime = 0; }
+});
+
+
+// ---------- Entry hub: 3-line menu ----------
+const entryMenu = document.getElementById('entry-menu');
+const entryMenuToggle = document.getElementById('entry-menu-toggle');
+function setEntryMenu(open){
+  entryMenu.style.display = open ? 'flex' : 'none';
+  entryMenuToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+entryMenuToggle.addEventListener('click', e=>{
+  e.stopPropagation();
+  setEntryMenu(entryMenu.style.display === 'none');
+});
+// any item closes the menu (their own click handlers still run)
+entryMenu.querySelectorAll('.menu-item').forEach(b=> b.addEventListener('click', ()=> setEntryMenu(false)));
+// tap anywhere else to close
+document.addEventListener('click', e=>{
+  if (!e.target.closest('.entry-menu-wrap')) setEntryMenu(false);
+});
+
+document.getElementById('entry-btn-settings').addEventListener('click', openSettings);
+
+// ---------- Profile popup ----------
+document.getElementById('entry-btn-profile').addEventListener('click', ()=>{
+  if (!myProfile) return;
+  const full = `${myProfile.first_name || ''} ${myProfile.last_name || ''}`.trim();
+  const av = document.getElementById('profile-avatar');
+  av.textContent = initials(full || myProfile.username);
+  av.style.background = nameColor(myProfile.username || full || '?');
+  document.getElementById('profile-fullname').textContent = full || myProfile.username;
+  document.getElementById('profile-username').textContent = '@' + myProfile.username;
+  document.getElementById('profile-email').textContent = (currentUser && currentUser.email) || '';
+  document.getElementById('profile-overlay').style.display = 'flex';
+});
+document.getElementById('btn-profile-close').addEventListener('click', ()=>{
+  document.getElementById('profile-overlay').style.display = 'none';
+});
+document.getElementById('profile-overlay').addEventListener('click', e=>{
+  if (e.target.id === 'profile-overlay') e.currentTarget.style.display = 'none';
+});
+

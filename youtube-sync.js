@@ -194,6 +194,13 @@ const YTSync = {
     ytSetState(ch, { playing:false, position: c.player ? c.player.getCurrentTime() : c.position }, true);
     setTimeout(()=>{ c.suppress=false; }, 900);
   },
+  stop(ch){
+    const c = YTChannels[ch]; if (!c.player || !c.currentId) return;
+    c.suppress = true;               // don't echo our own stop back as a "pause"
+    c.player.stopVideo();
+    setTimeout(()=>{ c.suppress = false; }, 900);
+    ytSetState(ch, { playing:false, position:0 }, true);
+  },
   syncToMe(ch){
     const c = YTChannels[ch]; if (!c.player || !c.currentId) return;
     ytSetState(ch, { position: c.player.getCurrentTime() }, true);

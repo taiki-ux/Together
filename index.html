@@ -106,21 +106,25 @@
 
   <!-- Entry gate: choice only, no chat / voice / menu / settings -->
   <div id="entry-hub">
-    <div class="entry-topline">
-      <div class="roomcode-pill">
-        <span>Room</span>
-        <span class="code mono" id="entry-room-code">—</span>
-        <button class="icon-btn" id="entry-btn-copy" title="Copy room code">⧉</button>
-        <button class="icon-btn" id="entry-btn-invite" title="Copy invite link">🔗</button>
-      </div>
-      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-    <div class="conn-status" id="conn-status" title="Connection status">🟢</div>
-    <button class="icon-btn" id="btn-settings" title="Settings">⚙</button>
-    <button class="btn btn-ghost btn-sm" id="entry-btn-profile">👤 Profile</button>
-    <button class="btn btn-ghost btn-sm" id="entry-btn-save-room">💾 Save room</button>
-    <button class="btn btn-ghost btn-sm" id="entry-btn-leave">Leave</button>
+  <div class="entry-topline">
+    <div class="roomcode-pill">
+      <span>Room</span>
+      <span class="code mono" id="entry-room-code">—</span>
+      <button class="icon-btn" id="entry-btn-copy" title="Copy room code">⧉</button>
+      <button class="icon-btn" id="entry-btn-invite" title="Copy invite link">🔗</button>
+    </div>
+    <div class="conn-status" id="entry-conn-status" title="Connection status">🟢</div>
   </div>
-</div>
+
+  <div class="entry-menu-wrap">
+    <button class="menu-toggle" id="entry-menu-toggle" type="button" aria-label="Menu" aria-expanded="false">☰</button>
+    <div class="entry-menu" id="entry-menu" style="display:none;">
+      <button class="menu-item" id="entry-btn-save-room" type="button">💾 Save room</button>
+      <button class="menu-item" id="entry-btn-profile" type="button">👤 Profile</button>
+      <button class="menu-item" id="entry-btn-settings" type="button">⚙ Settings</button>
+      <button class="menu-item menu-item-danger" id="entry-btn-leave" type="button">🚪 Leave</button>
+    </div>
+  </div>
 <div class="save-room-bar" id="save-room-bar" style="display:none;">
   <input type="text" id="save-room-name" placeholder="Name this room…" maxlength="40">
   <div class="icon-choices">
@@ -170,11 +174,16 @@
 
   <!-- Activity shell: appears once a mode is chosen -->
   <div id="activity-shell">
+    <div id="video-strip">
+  <button class="strip-toggle" id="video-strip-toggle" type="button">– Hide</button>
+  <button class="strip-toggle" id="video-strip-self" type="button">Hide Me</button>
+  <div id="video-strip-list"></div>
+</div>
     <div class="topbar">
       <button class="icon-btn" id="btn-back-to-hub" title="Back to menu">←</button>
       <div class="brand"><span class="brand-dot"></span><span>Together</span></div>
       <div class="topbar-chat-actions" id="topbar-chat-actions">
-        <button class="icon-btn" id="btn-chat-video-call" type="button" title="Video call — coming soon">📹</button>
+        <button class="icon-btn" id="btn-chat-video-call" type="button" title="Start video call">📹</button>
         <button class="icon-btn" id="btn-chat-voice-call" type="button" title="Voice call">📞</button>
         <button class="icon-btn" id="btn-chat-menu" type="button" title="More">⋮</button>
       </div>
@@ -211,7 +220,6 @@
            <input type="text" id="input-video-url" placeholder="Paste a YouTube link…">
            <button class="btn btn-secondary" id="btn-load-video" type="button">Play now</button>
            <button class="btn btn-violet" id="btn-queue-add-video" type="button">➕ Queue</button>
-           <button class="btn btn-ghost" id="btn-save-video" type="button" title="Save to your playlist">⭐</button>
           </div>
 
           <div class="queue-section">
@@ -230,8 +238,10 @@
           <div class="controls-row">
             <button class="btn btn-ghost btn-sm" id="btn-play-video">▶ Play</button>
             <button class="btn btn-ghost btn-sm" id="btn-pause-video">⏸ Pause</button>
+            <button class="btn btn-ghost btn-sm" id="btn-stop-video">⏹ Stop</button>
             <button class="btn btn-ghost btn-sm" id="btn-sync-video">🔄 Sync everyone to me</button>
             <button class="btn btn-ghost btn-sm" id="btn-fullscreen">⛶ Full screen</button>
+            <button class="btn btn-ghost btn-sm" id="btn-save-video" type="button" title="Save to your playlist">⭐ Save</button>
             <div class="seek-group">
               <span class="hint">Jump to</span>
               <input type="text" id="input-seek-video" placeholder="1:23">
@@ -277,7 +287,6 @@
            <input type="text" id="input-music-url" placeholder="Paste a YouTube or Spotify link…">
            <button class="btn btn-violet" id="btn-load-music" type="button">Play now</button>
            <button class="btn btn-secondary" id="btn-queue-add-music" type="button">➕ Queue</button>
-           <button class="btn btn-ghost" id="btn-save-music" type="button" title="Save to your playlist">⭐</button>
           </div>
 
           <div class="queue-section">
@@ -296,7 +305,9 @@
           <div class="controls-row" id="music-sync-controls">
             <button class="btn btn-ghost btn-sm" id="btn-play-music">▶ Play</button>
             <button class="btn btn-ghost btn-sm" id="btn-pause-music">⏸ Pause</button>
+            <button class="btn btn-ghost btn-sm" id="btn-stop-music">⏹ Stop</button>
             <button class="btn btn-ghost btn-sm" id="btn-sync-music">🔄 Sync everyone to me</button>
+                       <button class="btn btn-ghost" id="btn-save-music" type="button" title="Save to your playlist">⭐</button>
             <div class="seek-group">
               <span class="hint">Jump to</span>
               <input type="text" id="input-seek-music" placeholder="1:23">
@@ -433,7 +444,19 @@
           <p class="hint">Voice works from any page — this is just the focused view.</p>
           <div class="talk-grid" id="talk-grid"></div>
           <div class="talk-controls-row">
-            <button class="talk-mic-btn" id="btn-mic-talk" type="button">🎤 Join voice</button>
+            <div class="talk-actions">
+  <button class="talk-mic-btn" id="btn-mic-talk" type="button">🎤 Join voice</button>
+  <button class="talk-mic-btn talk-cam-btn" id="btn-cam-talk" type="button">📷 Start camera</button>
+</div>
+<div class="talk-quality">
+  <label for="select-video-quality">Video quality</label>
+  <select id="select-video-quality">
+    <option value="auto">Auto (best for your connection)</option>
+    <option value="saver">Data saver</option>
+    <option value="clear">Clearer</option>
+  </select>
+  <p class="hint" id="video-quality-label"></p>
+</div>
             <button class="icon-btn talk-deafen-btn" id="btn-deafen-talk" type="button" title="Deafen">🔊</button>
           </div>
         </div>
@@ -540,6 +563,17 @@
 
 <div id="toast-container"></div>
 
+<div id="profile-overlay">
+  <div class="settings-modal" style="text-align:center;">
+    <div class="avatar" id="profile-avatar" style="width:72px;height:72px;font-size:26px;margin:0 auto 12px;"></div>
+    <h2 id="profile-fullname" style="margin-bottom:4px;">—</h2>
+    <p class="hint" id="profile-username" style="margin:0 0 4px;"></p>
+    <p class="hint" id="profile-email" style="margin:0 0 18px;"></p>
+    <button class="btn btn-primary btn-block" id="btn-profile-close">Done</button>
+  </div>
+</div>
+
+
 <!-- External libraries (no dependencies) -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js"></script>
@@ -560,6 +594,7 @@
 <script src="profile.js"></script>
 <script src="music-player.js"></script>
 <script src="playlists.js"></script>
+<script src="video-call.js"></script>
 <script src="games.js"></script>
 
 <!-- Main app (depends on all modules above) -->

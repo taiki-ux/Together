@@ -84,9 +84,15 @@ function initPeer(){
    });
    peer.on('connection', conn=> setupDataConn(conn));
    peer.on('call', call=>{
-      call.answer(localStream || undefined);
-      setupMediaConn(call);
+         if (call.metadata && call.metadata.kind === 'video'){
+            call.answer();            // receive-only, we send our own camera separately
+            setupVideoConn(call);
+            return;
+         }
+         call.answer(localStream || undefined);
+         setupMediaConn(call);
    });
+   
    peer.on('disconnected', ()=>{
       // Lost the signaling connection (not the same as the data/voice links to
       // other people, which keep working) — try to quietly reconnect.
