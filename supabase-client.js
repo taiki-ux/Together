@@ -3,6 +3,15 @@
    One shared Supabase client (Auth + Postgres + Realtime).
    ============================================================ */
 
+// A password-reset email link lands here with a login token in the URL. Note that now (before
+// supabase-js tidies the URL) so the app can show "choose a new password" instead of logging
+// the person straight in. An expired/used link comes back with error_code in the URL instead.
+window.__recoveryPending = /[#&]type=recovery(&|$)/.test(location.hash);
+if (/[#&]error_code=/.test(location.hash)){
+  window.__authLinkError = true;
+  try{ history.replaceState(null, '', location.pathname + location.search); }catch(e){}
+}
+
 let supabaseClient = null;
 let currentUser = null;
 let myProfile = null; // {id, first_name, last_name, username}
@@ -30,7 +39,7 @@ supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 });
   window.supabaseClient = supabaseClient;
 
-const { data: authListener } = supabaseClient.auth.onAuthStateChange(async (event, session) => {
+supabaseClient.auth.onAuthStateChange(async (event, session) => {
      if (event === 'SIGNED_OUT') {
           currentUser = null;
           myProfile = null;
@@ -42,6 +51,11 @@ if (currentUser) {
        try{ await loadMyProfile(); }
         catch(err){ console.error('Failed to load profile after auth change:', err); }
          }
+if (event === 'PASSWORD_RECOVERY'){            // they followed a reset link: ask for a new password first
+  window.__recoveryPending = true;
+  if (typeof window.onPasswordRecovery === 'function') window.onPasswordRecovery();
+  return;
+}
 if (typeof window.onAuthChange === 'function') window.onAuthChange(currentUser); 
 });
 } catch (e) {
@@ -163,34 +177,40 @@ async function signUpWithProfile({ firstName, lastName, username, email, passwor
   }
 }
 
-async function signUpWithEmail(email, password) {
+// Asks the database whether a nickname is free (needs supabase/schema-username.sql).
+// Returns true / false, or null when it can't tell (function not installed, offline) —
+// callers treat null as "don't block", and the database's own unique rule still protects us.
+async function checkUsernameAvailable(username) {
+  if (!supabaseClient) return null;
+  try {
+    const { data, error } = await supabaseClient.rpc('username_available', { name: username });
+    if (error) return null;
+    return data === true;
+  } catch (err) {
+    return null;
+  }
+}
+
+// Sends the reset email. Supabase answers the same whether or not the address has an account
+// (so nobody can use this to find out who's registered). The link must point back at an
+// address on the Redirect URLs list in Supabase -> Authentication -> URL Configuration.
+async function requestPasswordReset(email) {
   if (!supabaseClient) return { error: { message: "Account service isn't available right now." } };
   try {
-    const result = await supabaseClient.auth.signUp({
-      email,
-      password,
-      options: { 
-        data: { 
-          username: 'user_' + Math.random().toString(36).slice(2, 8),
-          first_name: '',
-          last_name: ''
-        } 
-      }
-    });
-
-    if (result?.error) {
-      console.error('Sign-up error:', result.error);
-      return result;
-    }
-
-    if (result?.data?.session) {
-      currentUser = result.data.session.user;
-      await loadMyProfile().catch(err => console.error('Failed to load profile after signUp:', err));
-    }
-
-    return result;
+    return await supabaseClient.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
   } catch (err) {
-    console.error('Unexpected signUp error:', err);
+    console.error('Unexpected password-reset error:', err);
+    return { error: err };
+  }
+}
+
+// Used on the "choose a new password" screen (the reset link has already signed them in).
+async function setNewPassword(password) {
+  if (!supabaseClient) return { error: { message: "Account service isn't available right now." } };
+  try {
+    return await supabaseClient.auth.updateUser({ password });
+  } catch (err) {
+    console.error('Unexpected update-password error:', err);
     return { error: err };
   }
 }
@@ -235,15 +255,12 @@ async function signOutUser() {
 }
 
 // Expose state and functions
-window.__supabase = window.__supabase || {};
-window.__supabase.client = supabaseClient;
-window.__supabase.currentUser = () => currentUser;
-window.__supabase.myProfile = () => myProfile;
-
 window.supabaseClient = supabaseClient;
 window.restoreAuthSession = restoreAuthSession;
 window.loadMyProfile = loadMyProfile;
 window.signUpWithProfile = signUpWithProfile;
-window.signUpWithEmail = signUpWithEmail;
 window.signInWithEmail = signInWithEmail;
+window.requestPasswordReset = requestPasswordReset;
+window.setNewPassword = setNewPassword;
+window.checkUsernameAvailable = checkUsernameAvailable;
 window.signOutUser = signOutUser;

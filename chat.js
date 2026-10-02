@@ -17,7 +17,7 @@
    ============================================================ */
 
 // ---------- State ----------
-const chatMessages = {};        // id -> message object (this session only)
+const chatMessages = Object.create(null);        // id -> message object (this session only)
 let recentChatLog = [];         // rolling window the AI buddy uses for room context
 let replyingTo = null;          // { id, name, text } | null
 let editingId = null;           // message id currently being edited, or null
@@ -28,8 +28,20 @@ let typingTimeouts = {};
 let buddyTyping = false;
 
 function makeMessageId(){ return 'm' + Date.now() + Math.random().toString(36).slice(2,7); }
+// The only reactions the picker offers — anything else arriving from a peer is ignored.
+const CHAT_REACTIONS = ['👍','❤️','😂','😭','😱','🔥'];
+// "Today, 2:05 PM" / "Yesterday, 2:05 PM" / "1 Oct, 2:05 PM" (year added for other years)
 function formatTime(ts){
-  return new Date(ts).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' });
+  const d = new Date(ts), now = new Date();
+  const time = d.toLocaleTimeString([], { hour:'numeric', minute:'2-digit' });
+  const dayStart = x => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diffDays = Math.round((dayStart(now) - dayStart(d)) / 86400000);
+  let day;
+  if (diffDays === 0) day = 'Today';
+  else if (diffDays === 1) day = 'Yesterday';
+  else day = d.toLocaleDateString([], d.getFullYear() === now.getFullYear()
+    ? { day:'numeric', month:'short' } : { day:'numeric', month:'short', year:'numeric' });
+  return `${day}, ${time}`;
 }
 
 // ---------- Persistence ----------
@@ -104,12 +116,30 @@ function sendChatFromInput(){
   if (/(?:^|\s)@(ai|buddy)(?:\s|$)/i.test(text) && typeof respondAsAI === 'function') respondAsAI(text);
 }
 
+// ---------- Scrolling ----------
+// The log is display:none unless the Chat page is open, so it can't scroll itself then —
+// setMode() calls scrollChatToBottom() when the page opens, which is why Chat always
+// starts on the latest message. rAF merges a burst of messages (history load) into one scroll.
+let chatScrollQueued = false;
+function isNearBottom(log){ return log.scrollHeight - log.scrollTop - log.clientHeight < 120; }
+function scrollChatToBottom(){
+  if (chatScrollQueued) return;
+  chatScrollQueued = true;
+  requestAnimationFrame(()=>{
+    chatScrollQueued = false;
+    const log = document.getElementById('chat-log');
+    if (log) log.scrollTop = log.scrollHeight;
+  });
+}
+
 // ---------- Rendering ----------
 function addChatMessage(msg){
+  if (!isSafeId(msg.id)) return; // ids from peers/history end up in HTML and selectors
   chatMessages[msg.id] = msg;
   const log = document.getElementById('chat-log');
   if (log){
     if (log.querySelector(`[data-message-id="${msg.id}"]`)) return; // already rendered — avoid a duplicate
+    const stickToBottom = msg.mine || msg.fromHistory || isNearBottom(log);
 
     const senderKey = (msg.fromId || (msg.mine ? myId : msg.name)) + ':' + (msg.isAI ? 'ai' : 'user');
     const lastEl = log.lastElementChild;
@@ -142,7 +172,7 @@ function addChatMessage(msg){
       </div>
     `;
     log.appendChild(div);
-    log.scrollTop = log.scrollHeight;
+    if (stickToBottom) scrollChatToBottom();
     attachMessageInteractions(div, msg.id);
     renderMessageReactions(msg.id);
   }
@@ -159,8 +189,9 @@ function addSystemMessage(text){
   const div = document.createElement('div');
   div.className = 'msg system';
   div.textContent = text;
+  const stick = isNearBottom(log);
   log.appendChild(div);
-  log.scrollTop = log.scrollHeight;
+  if (stick) scrollChatToBottom();
 }
 
 // ---------- Remote sync ----------
@@ -176,7 +207,7 @@ registerHandler('chat', (fromId, data)=>{
     const msg = chatMessages[data.id];
     if (msg){ msg.deleted = true; msg.text = ''; renderDeletedMessage(data.id); }
   } else if (data.action === 'react'){
-    const msg = chatMessages[data.id]; if (!msg) return;
+    const msg = chatMessages[data.id]; if (!msg || !CHAT_REACTIONS.includes(data.emoji)) return;
     if (!msg.reactions[data.emoji]) msg.reactions[data.emoji] = [];
     const idx = msg.reactions[data.emoji].indexOf(data.peerId);
     if (data.add && idx === -1) msg.reactions[data.emoji].push(data.peerId);
@@ -230,7 +261,7 @@ function renderMessageReactions(id){
   const me = reactorId();
   el.innerHTML = Object.entries(msg.reactions || {}).map(([emoji, ids])=>{
     const mine = ids.includes(me);
-    return `<button class="reaction-pill ${mine?'mine':''}" data-toggle-emoji="${emoji}">${emoji} ${ids.length}</button>`;
+    return `<button class="reaction-pill ${mine?'mine':''}" data-toggle-emoji="${escapeHtml(emoji)}">${escapeHtml(emoji)} ${ids.length}</button>`;
   }).join('');
   el.querySelectorAll('[data-toggle-emoji]').forEach(btn=>{
     btn.addEventListener('click', ()=> toggleReaction(id, btn.dataset.toggleEmoji));
@@ -336,7 +367,7 @@ function openMessageActions(id){
   sheet.id = 'msg-action-sheet';
   sheet.innerHTML = `
     <div class="msg-action-emojis">
-      ${['👍','❤️','😂','😭','😱','🔥'].map(e=>`<button class="msg-emoji-btn" data-emoji="${e}" type="button">${e}</button>`).join('')}
+      ${CHAT_REACTIONS.map(e=>`<button class="msg-emoji-btn" data-emoji="${e}" type="button">${e}</button>`).join('')}
     </div>
     <button class="msg-action-row" data-do="reply" type="button">↩ Reply</button>
     ${canEdit ? '<button class="msg-action-row" data-do="edit" type="button">✏️ Edit</button>' : ''}
@@ -370,8 +401,9 @@ function closeMessageActions(){
 
 // ---------- Unread badges ----------
 function isChatVisible(){
-  const chatCol = document.getElementById('chat-col');
-  return !!(chatCol && chatCol.classList.contains('open')) && !document.hidden;
+  const pane = document.getElementById('pane-chat');
+  const shell = document.getElementById('activity-shell');
+  return !!(pane && pane.classList.contains('active') && shell && shell.style.display === 'flex') && !document.hidden;
 }
 function bumpUnread(){ unreadCount++; renderUnreadBadges(); }
 function clearUnread(){
@@ -388,19 +420,14 @@ function renderUnreadBadges(){
 (function initUnreadBadges(){
   const navChatBtn = document.querySelector('.nav-btn[data-mode="chat"]');
   if (navChatBtn) navChatBtn.insertAdjacentHTML('beforeend', '<span class="unread-badge" style="display:none;"></span>');
-  const toggleWrap = document.getElementById('chat-toggle-wrap');
-  if (toggleWrap) toggleWrap.insertAdjacentHTML('beforeend', '<span class="unread-badge" style="display:none;"></span>');
 })();
 document.querySelectorAll('.nav-btn[data-mode="chat"]').forEach(b=> b.addEventListener('click', clearUnread));
-const chatToggleBtnForUnread = document.getElementById('btn-chat-toggle');
-if (chatToggleBtnForUnread) chatToggleBtnForUnread.addEventListener('click', ()=>{
-  setTimeout(()=>{ if (isChatVisible()) clearUnread(); }, 0);
-});
 document.addEventListener('visibilitychange', ()=>{ if (!document.hidden && isChatVisible()) clearUnread(); });
 
 // ---------- Input wiring (send button, Enter key, typing broadcast) ----------
 document.getElementById('btn-send').addEventListener('click', sendChatFromInput);
 document.getElementById('input-chat').addEventListener('keydown', e=>{ if (e.key==='Enter') sendChatFromInput(); });
+document.getElementById('input-chat').addEventListener('focus', ()=> setTimeout(scrollChatToBottom, 300));
 
 let myTypingActive = false;
 let myTypingTimeout = null;

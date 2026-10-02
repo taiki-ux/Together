@@ -24,14 +24,20 @@ function nameColor(name){
   return `hsl(${Math.abs(hash)%360},70%,62%)`;
 }
 function initials(name){ return (name||'?').trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase(); }
-function escapeHtml(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+// Safe for element text AND for values inside HTML attributes (quotes are escaped too).
+function escapeHtml(s){
+  return String(s ?? '').replace(/[&<>"']/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch]));
+}
+// Ids that arrive from other peers/the network become object keys, selectors and
+// attribute values — only accept plain id-shaped strings (and never '__proto__').
+function isSafeId(s){ return typeof s === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(s) && s !== '__proto__'; }
 
 // ---------- Shared room state ----------
 let peer=null, myId=null, myName='', roomCode='', isHost=false, requireApproval=false;
 const dataConns = {};
 const mediaConns = {};
 const audioEls = {};
-let participants = {};
+let participants = Object.create(null); // keyed by peer ids from the network — no inherited keys
 let localStream = null;
 let micOn = false;
 let currentMode = null;      // 'video' | 'music' | 'games' — null until chosen
@@ -39,7 +45,7 @@ const speakingState = {};
 
 // ---------- Dispatch registry ----------
 // Other modules call registerHandler('type', fn) at load time; fn(fromId, data)
-const DataHandlers = {};
+const DataHandlers = Object.create(null); // looked up by a remote-supplied message type
 function registerHandler(type, fn){ DataHandlers[type] = fn; }
 function handleData(fromId, data){
   const fn = DataHandlers[data.type];
@@ -56,6 +62,7 @@ function clearSession(){
   sessionStorage.removeItem('together_room');
   sessionStorage.removeItem('together_name');
   sessionStorage.removeItem('together_ishost');
+  clearView();
 }
 function getSavedSession(){
   const savedRoom = sessionStorage.getItem('together_room');
@@ -64,6 +71,12 @@ function getSavedSession(){
   if (savedRoom && savedName) return { room:savedRoom, name:savedName, isHost: savedHost==='true' };
   return null;
 }
+
+// ---------- Where you were (so a reload puts you back on the same page) ----------
+// sessionStorage = per tab, survives a reload, gone when the tab is closed.
+function readView(){ try{ return JSON.parse(sessionStorage.getItem('together_view') || 'null'); }catch(e){ return null; } }
+function saveView(patch){ try{ sessionStorage.setItem('together_view', JSON.stringify({ ...(readView() || {}), ...patch })); }catch(e){} }
+function clearView(){ try{ sessionStorage.removeItem('together_view'); }catch(e){} }
 
 // ---------- PeerJS plumbing (discovery now via Supabase Realtime presence — see joinRoomPresence) ----------
 function initPeer(){
@@ -163,41 +176,93 @@ function respondToKnock(peerId, approved){
 // presence sync/join/leave events are the single source of truth for who's
 // in the room, so the room keeps working even if whoever created it leaves.
 let roomChannel = null;
+// ---------- Who's in the room (presence -> roster) ----------
+// A presence list can hold several sessions of one account: a reload leaves the old session
+// lingering for ~30s, and an invite link opened in a second tab is a second session.
+// The rules never compare device clocks, so a wrong phone clock can't get anyone kicked out:
+//   - another session of ME that was already here when I arrived -> I'm the newer one: ignore it
+//   - another session of ME that shows up AFTER I'm in           -> it's the newer one: this tab steps aside
+//   - a second session of someone else's account                  -> list only the newest
+const ignoredPeers = new Set();
+let presenceReady = false;      // false until the first presence snapshot is processed; later arrivals are "live"
+
+function myUserId(){ return (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null; }
+
+function acceptPresenceEntry(entry, isLive){
+  const id = entry && entry.peerId;
+  if (!isSafeId(id) || id === myId || ignoredPeers.has(id)) return false;
+  const uid = entry.userId || null;
+  if (uid){
+    if (uid === myUserId()){
+      if (isLive) yieldToNewerSession(); else ignoredPeers.add(id);
+      return false;
+    }
+    const olderId = Object.keys(participants).find(pid => pid !== id && pid !== myId && participants[pid].userId === uid);
+    if (olderId){
+      if (isLive || (entry.joinedAt || 0) >= (participants[olderId].joinedAt || 0)){
+        ignoredPeers.add(olderId);
+        removePeer(olderId, true);
+      } else {
+        ignoredPeers.add(id);
+        return false;
+      }
+    }
+  }
+  participants[id] = { ...(participants[id] || {}), name: String(entry.name || 'Someone').slice(0, 40), userId: uid, joinedAt: entry.joinedAt || 0 };
+  return true;
+}
+
+// This tab was the older session of my own account and a newer one just joined the room.
+function yieldToNewerSession(){
+  if (window.__yielding) return;
+  window.__yielding = true;
+  try{ sessionStorage.setItem('together_notice', 'You opened this room somewhere else, so this tab was closed.'); }catch(e){}
+  clearSession();
+  leaveRoomPresence();
+  try{ if (peer) peer.destroy(); }catch(e){}
+  location.reload();
+}
+
 function joinRoomPresence(){
   if (!window.supabaseClient){
     if (window.onPeerError) window.onPeerError("Can't reach the room service — check your connection and try again.");
     return;
   }
+  ignoredPeers.clear();
+  presenceReady = false;
+  const joinedAt = Date.now();
   roomChannel = supabaseClient.channel(`room:${roomCode}`, { config: { presence: { key: myId } } });
   roomChannel
     .on('presence', { event:'sync' }, ()=>{
-      // Full snapshot — used once on join to find everyone already here (no "joined" spam)
       const state = roomChannel.presenceState();
       Object.values(state).forEach(entries=> entries.forEach(entry=>{
-        if (entry.peerId === myId) return;
-        if (!participants[entry.peerId]) participants[entry.peerId] = { name: entry.name, userId: entry.userId || null };
-        else participants[entry.peerId].userId = entry.userId || null;
-        connectToPeer(entry.peerId);
+        if (acceptPresenceEntry(entry, presenceReady)) connectToPeer(entry.peerId);
       }));
+      presenceReady = true;   // anything arriving from here on joined after me
       renderOrbit();
     })
     .on('presence', { event:'join' }, ({ newPresences })=>{
       newPresences.forEach(p=>{
-        if (p.peerId === myId) return;
-        if (!participants[p.peerId]){ participants[p.peerId] = { name:p.name, userId: p.userId || null }; addSystemMessage(`${p.name} joined the room`); }
-        else participants[p.peerId].userId = p.userId || null;
-        connectToPeer(p.peerId);
+        const isNew = !participants[p.peerId];
+        if (acceptPresenceEntry(p, presenceReady)){
+          if (isNew && presenceReady) addSystemMessage(`${participants[p.peerId].name} joined the room`);
+          connectToPeer(p.peerId);
+        }
       });
       renderOrbit();
     })
     .on('presence', { event:'leave' }, ({ leftPresences })=>{
-         leftPresences.forEach(p=>{ if (p.peerId !== myId) removePeer(p.peerId); });
+      leftPresences.forEach(p=>{
+        if (p.peerId === myId) return;
+        ignoredPeers.delete(p.peerId);
+        removePeer(p.peerId);
+      });
     })
     .on('broadcast', { event:'knock' }, ({ payload })=>{
       if (window.onKnockReceived) window.onKnockReceived(payload);
     })
     .subscribe(async (status)=>{
-      if (status === 'SUBSCRIBED') await roomChannel.track({ peerId: myId, name: myName, userId: (typeof currentUser!=='undefined' && currentUser) ? currentUser.id : null });
+      if (status === 'SUBSCRIBED') await roomChannel.track({ peerId: myId, name: myName, userId: myUserId(), joinedAt });
     });
 }
 function leaveRoomPresence(){
@@ -206,21 +271,62 @@ function leaveRoomPresence(){
   roomChannel = null;
 }
 
-function connectToPeer(targetId){
-  if (!targetId || targetId === myId || dataConns[targetId]) return;
-  const conn = peer.connect(targetId, {metadata:{name:myName}, reliable:true});
-  setupDataConn(conn);
+// Only the lower peer id dials; the other side waits for the incoming link. That stops both
+// of us opening a link to each other at the same time (the old cause of "X left the room"
+// messages for people who were still there). If the expected dial never arrives, step in after 3s.
+function connectToPeer(targetId, force){
+  if (!targetId || targetId === myId || dataConns[targetId] || ignoredPeers.has(targetId)) return;
+  const dial = ()=>{
+    if (dataConns[targetId] || !participants[targetId] || !peer || peer.destroyed) return;
+    setupDataConn(peer.connect(targetId, {metadata:{name:myName}, reliable:true}), true);
+  };
+  if (force || myId < targetId) dial();
+  else setTimeout(dial, 3000);
 }
 
-function setupDataConn(conn){
+// A dropped link isn't the same as someone leaving (phones drop links in the background).
+// While they're still in the room's presence list we quietly try again; only presence
+// saying they've gone removes them.
+const redialAttempts = {};
+function isInPresence(peerId){
+  if (!roomChannel) return false;
+  return Object.values(roomChannel.presenceState()).some(entries => entries.some(e => e.peerId === peerId));
+}
+function scheduleRedial(peerId){
+  const n = (redialAttempts[peerId] = (redialAttempts[peerId] || 0) + 1);
+  if (n > 8){ delete redialAttempts[peerId]; return; }
+  setTimeout(()=>{
+    if (dataConns[peerId] || !participants[peerId] || !isInPresence(peerId)) return;
+    connectToPeer(peerId, true);
+  }, Math.min(2000 * n, 10000));
+}
+
+function setupDataConn(conn, outgoing){
+  if (ignoredPeers.has(conn.peer)){ try{ conn.close(); }catch(e){} return; }
+  conn._outgoing = !!outgoing;
   conn.on('open', ()=>{
+    const existing = dataConns[conn.peer];
+    if (existing && existing !== conn && existing.open){
+      // Two links between the same pair: both sides keep the one dialled by the lower id.
+      const initiator = c => c._outgoing ? myId : c.peer;
+      if (initiator(conn) >= initiator(existing)){ conn._duplicate = true; try{ conn.close(); }catch(e){} return; }
+      existing._duplicate = true; try{ existing.close(); }catch(e){}
+    }
+    delete redialAttempts[conn.peer];
     dataConns[conn.peer] = conn;
     sendData(conn, {type:'hello', mode: currentMode});
     if (window.onPeerConnected) window.onPeerConnected(conn.peer);
     maybeCallPeer(conn.peer);
   });
   conn.on('data', data=> handleData(conn.peer, data));
-  conn.on('close', ()=> removePeer(conn.peer));
+  conn.on('close', ()=>{
+    if (conn._duplicate) return;                       // we closed this one on purpose
+    if (dataConns[conn.peer] === conn) delete dataConns[conn.peer];
+    else if (dataConns[conn.peer]) return;             // a different live link exists — nothing to do
+    if (!participants[conn.peer]) return;              // already removed
+    if (isInPresence(conn.peer)) scheduleRedial(conn.peer);
+    else removePeer(conn.peer);
+  });
 }
 
 function setupMediaConn(call){
@@ -241,6 +347,7 @@ function setupMediaConn(call){
     if (typeof applyAudioSettings === 'function') applyAudioSettings(call.peer, audioEl);
   });
   call.on('close', ()=>{
+    if (mediaConns[call.peer] !== call) return;   // a newer call to the same person replaced this one
     if (audioEls[call.peer]){ audioEls[call.peer].remove(); delete audioEls[call.peer]; }
     delete mediaConns[call.peer];
   });
@@ -269,12 +376,15 @@ function broadcast(obj){
   for (const id in dataConns) sendData(dataConns[id], obj);
 }
 
-function removePeer(peerId){
+function removePeer(peerId, silent){
   const name = participants[peerId]?.name || 'Someone';
+  const conn = dataConns[peerId];
   delete dataConns[peerId];
+  delete redialAttempts[peerId];
+  if (conn){ conn._duplicate = true; try{ conn.close(); }catch(e){} }
   if (mediaConns[peerId]){ mediaConns[peerId].close(); delete mediaConns[peerId]; }
   if (audioEls[peerId]){ audioEls[peerId].remove(); delete audioEls[peerId]; }
-  if (participants[peerId]){ delete participants[peerId]; addSystemMessage(`${name} left the room`); }
+  if (participants[peerId]){ delete participants[peerId]; if (!silent) addSystemMessage(`${name} left the room`); }
   if (window.onPeerRemoved) window.onPeerRemoved(peerId);
   renderOrbit();
 }
@@ -340,27 +450,10 @@ async function acquireMicStream(deviceId){
   return navigator.mediaDevices.getUserMedia(constraints);
 }
 
-// ---------- Orbit (participant avatars) ----------
+// ---------- Roster-changed signal ----------
+// (Used to draw the sidebar avatars; that sidebar is gone. Everything that shows the
+// roster — hub presence, Talk grid, game opponent lists — hooks window.onOrbitRender.)
 function renderOrbit(){
-  const orbit = document.getElementById('orbit');
-  if (!orbit) return;
-  orbit.innerHTML = '';
-  const ids = Object.keys(participants);
-  const countEl = document.getElementById('participant-count');
-  if (countEl) countEl.textContent = `In the room · ${ids.length}`;
-  ids.forEach(id=>{
-    const p = participants[id];
-    const wrap = document.createElement('div'); wrap.className='avatar-wrap';
-    const av = document.createElement('div'); av.className='avatar'; av.dataset.peer=id;
-    av.style.background = nameColor(p.name||'?'); av.textContent = initials(p.name);
-    if (speakingState[id]) av.classList.add('speaking');
-    const badge = document.createElement('div'); badge.className='mic-badge'; badge.textContent = p.muted===false ? '🎤' : '·';
-    av.appendChild(badge);
-    av.style.cursor = 'pointer';
-    av.addEventListener('click', ()=>{ if (typeof openProfileForPeer === 'function') openProfileForPeer(id); });
-    const nm = document.createElement('div'); nm.className='avatar-name'; nm.textContent = (id===myId ? 'You' : p.name);
-    wrap.appendChild(av); wrap.appendChild(nm); orbit.appendChild(wrap);
-  });
   if (window.onOrbitRender) window.onOrbitRender();
 }
 
@@ -377,8 +470,8 @@ function renderHubPresence(){
     const statusText = presenceStatusLabel(p.status);
     const micIcon = p.muted === false ? ' 🎤' : '';
     return `
-      <div class="hub-presence-row" data-hub-avatar="${id}">
-        <div class="avatar" data-peer="${id}" style="background:${nameColor(p.name||'?')}">${initials(p.name)}</div>
+      <div class="hub-presence-row" data-hub-avatar="${escapeHtml(id)}">
+        <div class="avatar" data-peer="${escapeHtml(id)}" style="background:${nameColor(p.name||'?')}">${initials(p.name)}</div>
         <div class="hub-presence-info">
           <div class="hub-presence-name">${id===myId ? 'You' : escapeHtml(p.name)}</div>
           <div class="hub-presence-status">${statusText}${micIcon}</div>

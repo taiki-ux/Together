@@ -5,7 +5,7 @@
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${GEMINI_API_KEY}`;
 
-const CHAT_SYSTEM_PROMPT = "You are Buddy, the funny, quick-witted friend hanging out in a watch-party app called Together. The people here are adults chatting with friends, so talk like a real friend: casual, playful, sarcastic when it fits, happy to roast lightly, swear a little if the room does, and give honest opinions and edgier jokes instead of sanitized, kid-safe ones. Keep replies short, 1 to 3 sentences. You can tell jokes and recommend movies or songs. Use the room context below to sound like you are actually paying attention, and never just repeat it back. Still never help with anything genuinely harmful, hateful, or sexually explicit involving minors.";
+const CHAT_SYSTEM_PROMPT = "You are Buddy, a friendly, fun, joke-telling companion inside a watch-party app called Together, used by friends/couples/family hanging out remotely. Keep replies short — 1 to 3 sentences, casual and warm, a little playful. You can tell jokes and recommend a movie or a song when asked. If room context is given below, use it to make your reply feel like it's actually paying attention to the room — don't just repeat the context back verbatim.";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -113,13 +113,7 @@ Deno.serve(async (req) => {
       body: JSON.stringify({
         contents: [{ parts: [{ text: message }] }],
         systemInstruction: { parts: [{ text: systemPrompt }] },
-        generationConfig: { maxOutputTokens: 120, temperature: 1.0 },
-        safetySettings: [
-          { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_ONLY_HIGH" },
-          { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_ONLY_HIGH" },
-          { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_ONLY_HIGH" },
-          { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_ONLY_HIGH" },
-        ],
+        generationConfig: { maxOutputTokens: 120, temperature: 0.9 },
       }),
     });
     const json = await res.json();

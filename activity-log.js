@@ -42,21 +42,9 @@ window.onChannelLoading = (function(prev){
   };
 })(window.onChannelLoading);
 
-// ---------- Read helpers (for the upcoming Profile page) ----------
-async function fetchRecentActivity(kind, limit){
-  if (!currentUser || !supabaseClient) return [];
-  const { data, error } = await supabaseClient
-    .from('activity_log').select('*')
-    .eq('user_id', currentUser.id)
-    .eq('kind', kind)
-    .order('created_at', { ascending:false })
-    .limit(limit || 10);
-  if (error){ console.error('Failed to fetch recent activity:', error); return []; }
-  return data || [];
-}
-
-// Same as above, but for someone else's profile (any signed-in user's
-// activity is readable — see the RLS policy in the schema file).
+// ---------- Read helpers (used by the Profile page) ----------
+// Recent activity for any user's profile (any signed-in user's activity is
+// readable — see the RLS policy in the schema file).
 async function fetchRecentActivityFor(userId, kind, limit){
   if (!supabaseClient) return [];
   const { data, error } = await supabaseClient

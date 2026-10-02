@@ -103,20 +103,23 @@ async function fetchFriends(){
 // swaps back, and whatever screen-room had showing (entry-hub or
 // activity-shell, and whichever pane) is untouched underneath, so it's
 // exactly where you left it.
-function openProfileForPeer(peerId){
-  const isOwn = (peerId === myId);
-  const userId = isOwn ? (currentUser ? currentUser.id : null) : (participants[peerId] ? participants[peerId].userId : null);
-  const fallbackName = isOwn ? myName : (participants[peerId] ? participants[peerId].name : 'Someone');
-
+function openProfileScreen(userId, fallbackName, isOwn){
   document.getElementById('screen-room').style.display = 'none';
   document.getElementById('screen-profile').style.display = 'flex';
   window.scrollTo(0,0);
   renderProfile(userId, fallbackName, isOwn);
 }
+function openProfileForPeer(peerId){
+  const isOwn = (peerId === myId);
+  const userId = isOwn ? (currentUser ? currentUser.id : null) : (participants[peerId] ? participants[peerId].userId : null);
+  const fallbackName = isOwn ? myName : (participants[peerId] ? participants[peerId].name : 'Someone');
+  openProfileScreen(userId, fallbackName, isOwn);
+}
 function closeProfileScreen(){
   document.getElementById('screen-profile').style.display = 'none';
   document.getElementById('screen-room').style.display = 'block';
   window.scrollTo(0,0);
+  saveView({ profile: null });
 }
 document.getElementById('btn-profile-back')?.addEventListener('click', closeProfileScreen);
 
@@ -232,6 +235,7 @@ async function renderProfile(userId, fallbackName, isOwn){
   const container = document.getElementById('profile-view');
   if (!container) return;
   container.innerHTML = '<p class="hint">Loading profile…</p>';
+  saveView({ profile: { userId, name: fallbackName || '', isOwn: !!isOwn } });   // so a reload reopens this profile
 
   if (!userId){
     container.innerHTML = `

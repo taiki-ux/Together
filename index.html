@@ -2,7 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="theme-color" content="#0b0f1a">
+<script src="theme.js"></script>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Together">
 <title>Together — watch, listen, play</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;0,700;1,500&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
@@ -35,26 +42,41 @@
     </div>
     
     <div id="auth-login">
-      <div class="field"><label>Email</label><input type="text" id="login-email" placeholder="you@example.com"></div>
-      <div class="field"><label>Password</label><input type="password" id="login-password" placeholder="Your password"></div>
+      <div class="field"><label>Email</label><input type="text" id="login-email" placeholder="you@example.com" autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false"></div>
+      <div class="field"><label>Password</label><input type="password" id="login-password" placeholder="Your password" autocomplete="current-password"></div>
       <button class="btn btn-primary btn-block" id="btn-login">Log in</button>
+      <div style="text-align:center; margin-top:14px; font-size:13px;"><button type="button" class="auth-link" id="btn-forgot-link">Forgot password?</button></div>
     </div>
     
     <div id="auth-signup" style="display:none;">
       <div class="split" style="margin-top:0;">
-        <div class="field"><label>First name</label><input type="text" id="signup-first"></div>
-        <div class="field"><label>Last name</label><input type="text" id="signup-last"></div>
+        <div class="field"><label>First name</label><input type="text" id="signup-first" autocomplete="given-name"></div>
+        <div class="field"><label>Last name</label><input type="text" id="signup-last" autocomplete="family-name"></div>
       </div>
       <div class="field">
         <label>Nickname</label>
-        <input type="text" id="signup-username" placeholder="Shown in chat & the room" maxlength="20">
+        <input type="text" id="signup-username" placeholder="Shown in chat & the room" maxlength="20" autocomplete="nickname" autocapitalize="none" spellcheck="false">
         <p class="hint" id="username-status" style="margin-top:4px;">This is your display name everywhere in the app — like a username, and it must be unique.</p>
       </div>
-      <div class="field"><label>Email</label><input type="text" id="signup-email" placeholder="you@example.com"></div>
-      <div class="field"><label>Password</label><input type="password" id="signup-password" placeholder="At least 6 characters"></div>
+      <div class="field"><label>Email</label><input type="text" id="signup-email" placeholder="you@example.com" autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false"></div>
+      <div class="field"><label>Password</label><input type="password" id="signup-password" placeholder="At least 6 characters" autocomplete="new-password"></div>
       <button class="btn btn-primary btn-block" id="btn-signup">Create account</button>
     </div>
     
+        <div id="auth-forgot" style="display:none;">
+      <p class="hint" style="margin:0 0 14px;">Enter the email you signed up with and we'll send you a link to choose a new password.</p>
+      <div class="field"><label>Email</label><input type="text" id="forgot-email" placeholder="you@example.com" autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false"></div>
+      <button class="btn btn-primary btn-block" id="btn-forgot-send" type="button">Send reset link</button>
+      <button class="btn btn-ghost btn-sm btn-block" id="btn-forgot-back" type="button" style="margin-top:10px;">← Back to log in</button>
+    </div>
+
+    <div id="auth-reset" style="display:none;">
+      <p class="hint" style="margin:0 0 14px;">Choose a new password for your account.</p>
+      <div class="field"><label>New password</label><input type="password" id="reset-password" placeholder="At least 6 characters" autocomplete="new-password"></div>
+      <div class="field"><label>Confirm new password</label><input type="password" id="reset-password2" placeholder="Type it again" autocomplete="new-password"></div>
+      <button class="btn btn-primary btn-block" id="btn-reset-save" type="button">Save new password</button>
+    </div>
+
     <div id="auth-status" style="margin-top:16px; font-size:13px; color:var(--text-muted); min-height:18px;"></div>
   </div>
 </div>
@@ -462,7 +484,21 @@
         
         <!-- CHAT (full page) -->
         <div class="pane" id="pane-chat">
-          <div id="chat-page-mount" class="chat-page-mount"></div>
+          <div id="chat-page-mount" class="chat-page-mount">
+          <div class="chat-col" id="chat-col">
+            <div class="chat-log" id="chat-log"></div>
+            <p class="typing-indicator-text" id="typing-indicator"></p>
+            <p class="chat-hint">Tip: mention <b>@Buddy</b> for a joke, a movie pick, or a song pick. Press and hold a message for more options.</p>
+            <div class="compose-context-bar" id="compose-context-bar" style="display:none;">
+              <span class="compose-context-label" id="compose-context-label"></span>
+              <button class="icon-btn" id="btn-cancel-compose-context" type="button" aria-label="Cancel">✕</button>
+            </div>
+            <div class="chat-input-row">
+              <input type="text" id="input-chat" placeholder="Say something…" maxlength="500" aria-label="Message">
+              <button class="btn btn-primary" id="btn-send" type="button">Send</button>
+            </div>
+          </div>
+          </div>
         </div>
 
         <!-- TALK (voice-focused view) -->
@@ -475,49 +511,13 @@
   <button class="talk-mic-btn" id="btn-mic-talk" type="button">🎤 Join voice</button>
   <button class="talk-mic-btn talk-cam-btn" id="btn-cam-talk" type="button">📷 Start camera</button>
 </div>
-<div class="talk-quality">
-  <label for="select-video-quality">Video quality</label>
-  <select id="select-video-quality">
-    <option value="auto">Auto (best for your connection)</option>
-    <option value="saver">Data saver</option>
-    <option value="clear">Clearer</option>
-  </select>
-  <p class="hint" id="video-quality-label"></p>
-</div>
             <button class="icon-btn talk-deafen-btn" id="btn-deafen-talk" type="button" title="Deafen">🔊</button>
           </div>
         </div>
 
       </div>
 
-      <div class="side-col" id="side-col">
-        <div class="constellation">
-          <h4 id="participant-count">In the room</h4>
-          <div class="orbit" id="orbit"></div>
-          <div class="mic-row">
-            <button class="btn btn-secondary btn-sm" id="btn-mic" style="flex:1;">🎤 Join voice</button>
-            <button class="icon-btn" id="btn-deafen" type="button" title="Deafen">🔊</button>
-          </div>
-          <div id="chat-toggle-wrap">
-                <button class="btn btn-ghost btn-sm btn-block" id="btn-chat-toggle">💬 Open chat</button>
-              </div>
-            </div>
-            <div id="chat-sidebar-mount">
-              <div class="chat-col" id="chat-col">
-                <div class="chat-log" id="chat-log"></div>
-                <p class="typing-indicator-text" id="typing-indicator"></p>
-                <p class="chat-hint">Tip: mention <b>@Buddy</b> for a joke, a movie pick, or a song pick. Press and hold a message for more options.</p>
-                <div class="compose-context-bar" id="compose-context-bar" style="display:none;">
-                  <span class="compose-context-label" id="compose-context-label"></span>
-                  <button class="icon-btn" id="btn-cancel-compose-context" type="button">✕</button>
-                </div>
-                <div class="chat-input-row">
-                 <input type="text" id="input-chat" placeholder="Say something…" maxlength="500">
-                 <button class="btn btn-primary" id="btn-send">Send</button>
-                </div>
-              </div>
-            </div>
-          </div>
+
     </div>
 
     <div class="bottom-nav" id="bottom-nav">
@@ -562,6 +562,25 @@
     <button class="btn btn-ghost btn-block btn-sm" id="btn-mic-test" type="button" style="margin-bottom:6px;">🎚 Test microphone</button>
     <div class="mic-test-meter-track"><div class="mic-test-meter-fill" id="mic-test-meter"></div></div>
 
+    <div class="settings-row settings-row-stack">
+      <div><div class="lbl">Appearance</div><div class="desc">Follow your device, or pick one</div></div>
+      <div class="theme-choices" role="radiogroup" aria-label="Theme">
+        <button type="button" class="theme-choice" role="radio" aria-checked="false" data-theme-pref="system">💻 System</button>
+        <button type="button" class="theme-choice" role="radio" aria-checked="false" data-theme-pref="light">☀️ Light</button>
+        <button type="button" class="theme-choice" role="radio" aria-checked="false" data-theme-pref="dark">🌙 Dark</button>
+      </div>
+    </div>
+
+    <div class="settings-row settings-row-stack">
+      <div><div class="lbl">Video quality</div><div class="desc">Auto adapts to your connection; Data saver uses the least data</div></div>
+      <select id="select-video-quality" aria-label="Video quality">
+        <option value="auto">Auto (best for your connection)</option>
+        <option value="saver">Data saver</option>
+        <option value="clear">Clearer</option>
+      </select>
+      <p class="hint" id="video-quality-label"></p>
+    </div>
+
     <div class="settings-row">
       <div><div class="lbl">Chat sound</div><div class="desc">Play a sound for new messages</div></div>
       <div class="toggle on" id="toggle-sound"></div>
@@ -571,7 +590,7 @@
       <div class="toggle on" id="toggle-autosync"></div>
     </div>
     <div class="settings-row">
-      <div><div class="lbl">Auto-join voice</div><div class="desc">Connect to voice as soon as you enter a room</div></div>
+      <div><div class="lbl">Auto-join voice</div><div class="desc">Join voice muted when you enter a room — unmute when you want to talk</div></div>
       <div class="toggle on" id="toggle-autojoin-voice"></div>
     </div>
     <div class="settings-row">
@@ -579,8 +598,9 @@
       <div class="toggle" id="toggle-push-to-talk"></div>
     </div>
 
-    <div class="settings-roadmap">
-      ✅ Accounts, playlists, and the AI buddy now run on Supabase (once you've run the one-time setup — see supabase/README.md). 🚧 Spotify still needs a Premium account to test real playback across rooms.
+    <div class="settings-row">
+      <div><div class="lbl">Keep screen on</div><div class="desc">Stops your phone sleeping while you're in a room, so voice and video keep going</div></div>
+      <div class="toggle on" id="toggle-keep-awake" role="switch" aria-checked="true" tabindex="0"></div>
     </div>
 
     <div class="settings-about"><b>Together</b> — made by <b>Taiki Ryuzaki</b><br>watch, listen, and play with the people you miss.</div>
@@ -589,17 +609,6 @@
 </div>
 
 <div id="toast-container"></div>
-
-<div id="profile-overlay">
-  <div class="settings-modal" style="text-align:center;">
-    <div class="avatar" id="profile-avatar" style="width:72px;height:72px;font-size:26px;margin:0 auto 12px;"></div>
-    <h2 id="profile-fullname" style="margin-bottom:4px;">—</h2>
-    <p class="hint" id="profile-username" style="margin:0 0 4px;"></p>
-    <p class="hint" id="profile-email" style="margin:0 0 18px;"></p>
-    <button class="btn btn-primary btn-block" id="btn-profile-close">Done</button>
-  </div>
-</div>
-
 
 <!-- External libraries (no dependencies) -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
@@ -622,6 +631,7 @@
 <script src="music-player.js"></script>
 <script src="playlists.js"></script>
 <script src="video-call.js"></script>
+<script src="background.js"></script>
 <script src="games.js"></script>
 
 <!-- Main app (depends on all modules above) -->

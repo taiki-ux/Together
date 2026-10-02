@@ -62,12 +62,46 @@ async function addRoomMember(code, userId){
   if (error && error.code !== '23505') console.error('Failed to remember room member:', error); // 23505 = already remembered, fine
 }
 
+// ---------- Does this room exist? ----------
+// A saved room always exists (even with nobody in it). Otherwise a room only exists while
+// someone is in it, so we peek at the room's presence list without joining it.
+async function roomExists(code){
+  if (!supabaseClient) throw new Error('offline');
+  const { data, error } = await supabaseClient.from('rooms').select('code').eq('code', code).maybeSingle();
+  if (!error && data) return true;
+  return peekRoomOccupied(code);
+}
+function peekRoomOccupied(code, timeoutMs){
+  return new Promise((resolve, reject)=>{
+    const ch = supabaseClient.channel(`room:${code}`, { config:{ presence:{ key:'peek-' + Math.random().toString(36).slice(2) } } });
+    let done = false;
+    const finish = (fn, value)=>{
+      if (done) return; done = true; clearTimeout(timer);
+      try{ supabaseClient.removeChannel(ch); }catch(e){}
+      fn(value);
+    };
+    const occupied = ()=> Object.keys(ch.presenceState()).length > 0;
+    const timer = setTimeout(()=> finish(reject, new Error('timeout')), timeoutMs || 7000);
+    ch.on('presence', { event:'sync' }, ()=> finish(resolve, occupied()))
+      .subscribe((status)=>{
+        if (status === 'SUBSCRIBED') setTimeout(()=> finish(resolve, occupied()), 2000);   // in case an empty room sends no sync
+        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') finish(reject, new Error(status));
+      });
+  });
+}
+
 // ---------- Saved-rooms screen ----------
-async function renderSavedRoomsScreen(){
+function showSavedRoomsScreen(prefetched){
+  ['screen-auth','screen-landing','screen-room','screen-profile'].forEach(id=>{ const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+  document.getElementById('screen-saved-rooms').style.display = 'flex';
+  saveView({ screen:'saved' });
+  renderSavedRoomsScreen(prefetched);
+}
+async function renderSavedRoomsScreen(prefetched){
   const listEl = document.getElementById('saved-rooms-list');
   const emptyEl = document.getElementById('saved-rooms-empty');
   listEl.innerHTML = '<p class="hint">Loading your rooms…</p>';
-  const rooms = await fetchMySavedRooms();
+  const rooms = prefetched || await fetchMySavedRooms();
   if (rooms.length === 0){
     listEl.innerHTML = '';
     emptyEl.style.display = 'block';
@@ -84,8 +118,8 @@ async function renderSavedRoomsScreen(){
         </div>
       </div>
       <div class="saved-room-actions">
-        <button class="btn btn-secondary btn-sm" data-join="${r.code}" data-name="${escapeHtml(r.name)}">Join</button>
-        <button class="icon-btn" data-delete="${r.id}" title="Delete">🗑</button>
+        <button class="btn btn-secondary btn-sm" data-join="${escapeHtml(r.code)}" data-name="${escapeHtml(r.name)}">Join</button>
+        <button class="icon-btn" data-delete="${escapeHtml(r.id)}" title="Delete">🗑</button>
       </div>
     </div>
   `).join('');
@@ -102,23 +136,17 @@ async function renderSavedRoomsScreen(){
 }
 function joinSavedRoom(code, name){
   roomCode = code; isHost = false; requireApproval = false; // your own saved room — no knock needed
-  document.getElementById('screen-saved-rooms').style.display='none';
-  document.getElementById('screen-landing').style.display='flex';
+  showLandingScreen();
   setLandingLoading(true);
   showLandingStatus(`Joining "${name}"…`);
   initPeer();
 }
 
 document.getElementById('btn-new-room').addEventListener('click', ()=>{
-  document.getElementById('screen-saved-rooms').style.display='none';
-  document.getElementById('screen-landing').style.display='flex';
+  showLandingScreen();
   showLandingStatus('');
 });
-document.getElementById('btn-back-to-rooms').addEventListener('click', ()=>{
-  document.getElementById('screen-landing').style.display='none';
-  document.getElementById('screen-saved-rooms').style.display='flex';
-  renderSavedRoomsScreen();
-});
+document.getElementById('btn-back-to-rooms').addEventListener('click', ()=> showSavedRoomsScreen());
 
 // ---------- Save-this-room inline bar (shown once inside a room) ----------
 let selectedRoomIcon = '🎬';

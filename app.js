@@ -25,19 +25,38 @@ function withTimeout(promise, ms, message){
 
 function shortCode(code){ return code.length > 6 ? code.slice(0,3) + '…' : code; }
 
-function toastSuccess(msg) {
-  const container = document.getElementById('toast-container');
-  if (!container) return;
-  const el = document.createElement('div');
-  el.className = 'toast toast-success';
-  el.textContent = msg;
-  el.style.color = '#2ecc71';
-  el.style.fontWeight = 'bold';
-  container.appendChild(el);
-  setTimeout(()=> el.remove(), 3000);
+// ---------- Invite links ----------
+// ?room=CODE is stashed for this tab and removed from the address bar straight away, so a
+// reload (or sharing the page URL) can't re-trigger a join, and it survives the login step.
+(function captureInvite(){
+  try{
+    const code = new URLSearchParams(location.search).get('room');
+    if (!code) return;
+    sessionStorage.setItem('together_invite', code.trim().toLowerCase());
+    history.replaceState(null, '', location.pathname);
+  }catch(e){}
+})();
+function takeInvite(){
+  try{
+    const code = sessionStorage.getItem('together_invite');
+    if (code) sessionStorage.removeItem('together_invite');
+    return code || null;
+  }catch(e){ return null; }
+}
+function showPendingNotice(){
+  try{
+    const note = sessionStorage.getItem('together_notice');
+    if (!note) return;
+    sessionStorage.removeItem('together_notice');
+    setTimeout(()=> toast(note), 400);
+  }catch(e){}
 }
 
-// ---------- Splash: fixed 5s, no skip ----------
+// ---------- Splash + boot ----------
+// A tab's first open plays the full 5s splash. Reloads skip straight through (the splash only
+// holds until the saved login is checked), so refreshing feels like a refresh, not a restart.
+let pendingRestoreView = null;   // where to put the person back once they're re-connected to their room
+let appEntered = false;          // guards against entering the app twice (login event + explicit call)
 (function(){
   const colors = ['#ff6f91','#ffd166','#5ee6d0','#a78bfa'];
   const splash = document.getElementById('screen-splash');
@@ -53,58 +72,86 @@ function toastSuccess(msg) {
     p.style.animationDelay = (Math.random()*4)+'s';
     splash.appendChild(p);
   }
+  let returning = false;
+  try{ returning = sessionStorage.getItem('together_booted') === '1'; sessionStorage.setItem('together_booted', '1'); }catch(e){}
+  const authReady = restoreAuthSession();      // check the saved login while the splash plays
   setTimeout(async ()=>{
-    splash.style.transition = 'opacity .5s ease';
+    const user = await authReady;
+    splash.style.transition = 'opacity ' + (returning ? '.2s' : '.5s') + ' ease';
     splash.style.opacity = '0';
-    setTimeout(async ()=>{
-      splash.style.display='none';
-      const user = await restoreAuthSession();
-      if (user && myProfile){
-        enterAppAsUser();
-      } else {
+    setTimeout(()=>{
+      splash.style.display = 'none';
+      if (window.__authLinkError){                      // expired / already-used reset link
         showAuthScreen();
-      }
-    }, 500);
-  }, 5000);
+        setAuthTab('forgot');
+        showAuthStatus('That reset link has expired or was already used. Enter your email to get a new one.', true);
+      } else if (window.__recoveryPending){ showResetScreen(); }
+      else if (user && myProfile) enterAppAsUser(); else showAuthScreen();
+      showPendingNotice();
+    }, returning ? 200 : 500);
+  }, returning ? 0 : 5000);
 })();
 
-// ---------- Auth screen flow ----------
-function showAuthScreen() {
-  document.getElementById('screen-auth').style.display='flex';
-  document.getElementById('screen-landing').style.display='none';
-  document.getElementById('screen-room').style.display='none';
+// ---------- Screens ----------
+const ALL_SCREENS = ['screen-auth','screen-landing','screen-saved-rooms','screen-room','screen-profile'];
+function showOnly(id, display){
+  ALL_SCREENS.forEach(s=>{ const el = document.getElementById(s); if (el) el.style.display = (s === id) ? display : 'none'; });
+}
+function showAuthScreen(){
+  appEntered = false;
+  showOnly('screen-auth', 'flex');
+  // Never logged in on this device? Start on Sign up rather than a login they can't use yet.
+  let known = false;
+  try{ known = localStorage.getItem('together_has_account') === '1'; }catch(e){}
+  setAuthTab(known ? 'login' : 'signup');
+}
+function showLandingScreen(){
+  showOnly('screen-landing', 'flex');
+  saveView({ screen:'landing' });
 }
 
-// ---------- Post-login entry point ---------- 
-function enterAppAsUser(){
-  // Guard: ensure myProfile exists before accessing
-  if (!myProfile) {
+// ---------- Post-login entry point ----------
+async function enterAppAsUser(){
+  if (appEntered || window.__recoveryPending) return;
+  if (!myProfile){
     console.error('myProfile is null, cannot enter app');
     showAuthScreen();
     return;
   }
-  
+  appEntered = true;
+  try{ localStorage.setItem('together_has_account', '1'); }catch(e){}
   myName = myProfile.username || 'User';
   if (typeof startGlobalPresence === 'function' && currentUser) startGlobalPresence(currentUser.id);
-  document.getElementById('screen-auth').style.display='none';
-  document.getElementById('screen-landing').style.display='flex';
-  document.getElementById('screen-room').style.display='none';
-  
-  const welcomeEl = document.getElementById('landing-welcome');
-  if (welcomeEl) {
-    welcomeEl.textContent = `Hey ${myProfile.first_name} — sync a video, put on music, or play a game.`;
-  }
-  
+
+  const invited = takeInvite();
   const saved = getSavedSession();
-  if (saved){
+
+  // Reloaded while in a room: reconnect to the same room and put them back on the same page.
+  if (saved && (!invited || invited === saved.room)){
+    pendingRestoreView = readView();
     roomCode = saved.room; isHost = saved.isHost;
-    showLandingStatus('Restoring your session…');
+    showLandingScreen();
+    setLandingLoading(true);
+    showLandingStatus('Getting you back into the room…');
     initPeer();
     return;
   }
-  const params = new URLSearchParams(location.search);
-  const invited = params.get('room');
-  if (invited) roomInput.value = invited;
+  if (saved){ clearSession(); }                      // opened a different room's invite: that wins
+
+  // Opened an invite link: go straight in.
+  if (invited){
+    showLandingScreen();
+    roomInput.value = invited;
+    await joinRoomByCode(invited);
+    return;
+  }
+
+  // Otherwise: back to the screen they were on, or home (their saved rooms, else create/join).
+  const view = readView();
+  if (view && view.screen === 'landing'){ showLandingScreen(); return; }
+  let rooms = [];
+  try{ rooms = await fetchMySavedRooms(); }catch(e){ console.warn('Could not load saved rooms:', e); }
+  if (rooms.length) showSavedRoomsScreen(rooms); else showLandingScreen();
 }
 
 // ---------- Global toggles used by other modules ----------
@@ -121,15 +168,35 @@ document.getElementById('btn-create').addEventListener('click', ()=>{
   showLandingStatus('Opening your room…');
   initPeer();
 });
-document.getElementById('btn-join').addEventListener('click', async ()=>{
-  const code = roomInput.value.trim().toLowerCase();
+// Everything a typed code or invite link goes through. A wrong code must say so — it used to
+// silently open a brand-new empty room.
+const ROOM_CODE_RE = /^[a-z0-9_-]{3,64}$/;
+async function joinRoomByCode(raw){
+  const code = (raw || '').trim().toLowerCase();
   if (!code){ showLandingStatus("Enter the room code your friend sent you.", true); return; }
-  roomCode = code; isHost = false;
+  if (!ROOM_CODE_RE.test(code)){ showLandingStatus("That doesn't look like a room code — check it and try again.", true); return; }
   setLandingLoading(true);
+  showLandingStatus('Looking for the room…');
+  let exists;
+  try{ exists = await roomExists(code); }
+  catch(e){
+    console.warn('Room check failed:', e);
+    setLandingLoading(false);
+    showLandingStatus("Couldn't check that room — check your connection and try again.", true);
+    return;
+  }
+  if (!exists){
+    setLandingLoading(false);
+    showLandingStatus("No room with that code is open right now. Check the code, or ask your friend for a fresh link.", true);
+    return;
+  }
+  roomCode = code; isHost = false;
   showLandingStatus('Joining…');
   requireApproval = await resolveRequireApproval(code);
   initPeer();
-});
+}
+document.getElementById('btn-join').addEventListener('click', ()=> joinRoomByCode(roomInput.value));
+roomInput.addEventListener('keydown', e=>{ if (e.key === 'Enter') joinRoomByCode(roomInput.value); });
 function setLandingLoading(loading){
   document.getElementById('btn-create').disabled = loading;
   document.getElementById('btn-join').disabled = loading;
@@ -146,15 +213,21 @@ window.onConnectionStatus = function(state){
 
 // ---------- Entry gate (choice-only) ----------
 window.onPeerReady = async function(){
-  document.getElementById('screen-landing').style.display='none';
-  document.getElementById('screen-room').style.display='block';
+  const restore = pendingRestoreView;      // set when this is a reconnect after a reload
+  pendingRestoreView = null;
+  showOnly('screen-room', 'block');
   document.getElementById('entry-hub').style.display='flex';
   window.scrollTo(0,0);
+  saveView({ screen:'room', roomView:'hub', profile:null });
   document.getElementById('entry-room-code').textContent = shortCode(roomCode);
   document.getElementById('input-rename').value = myName;
   if (typeof loadChatHistory === 'function') await loadChatHistory();
   addSystemMessage(isHost ? `Room created. Share the code "${roomCode}" with your friends.` : `You joined "${roomCode}".`);
   if (typeof autoJoinVoiceIfEnabled === 'function') autoJoinVoiceIfEnabled();
+  if (typeof requestWakeLock === 'function') requestWakeLock();
+  // After a reload: back to the page (and profile) they were on
+  if (restore && restore.roomView === 'activity' && restore.mode) enterActivity(restore.mode, false);
+  if (restore && restore.profile && restore.profile.userId) openProfileScreen(restore.profile.userId, restore.profile.name, !!restore.profile.isOwn);
 };
 document.getElementById('entry-btn-copy').addEventListener('click', copyRoomCode);
 document.getElementById('entry-btn-invite').addEventListener('click', copyInviteLink);
@@ -198,10 +271,11 @@ function leaveRoom(){
 document.getElementById('entry-btn-leave').addEventListener('click', leaveRoom);
 
 document.querySelectorAll('.hub-card').forEach(c=> c.addEventListener('click', ()=> enterActivity(c.dataset.mode, true)));
-document.getElementById('btn-back-to-hub').addEventListener('click', ()=>{
-  document.getElementById('activity-shell').style.display='none';
-  document.getElementById('entry-hub').style.display='flex';
+document.getElementById('btn-back-to-hub').addEventListener('click', ()=>{
+  document.getElementById('activity-shell').style.display='none';
+  document.getElementById('entry-hub').style.display='flex';
   window.scrollTo(0,0);
+  saveView({ roomView:'hub' });
 });
 document.getElementById('btn-chat-video-call').addEventListener('click', ()=>{
   setMode('talk', false);
@@ -227,66 +301,49 @@ function enterActivity(mode, broadcastIt){
 
 const SHARED_MODES = ['video','music','games']; 
 
-function mountChatInSidebar(){
-     const mount = document.getElementById('chat-sidebar-mount');
-     if (mount) mount.appendChild(document.getElementById('chat-col'));
-}
-function mountChatInPage(){
-     const mount = document.getElementById('chat-page-mount');
-     if (mount) mount.appendChild(document.getElementById('chat-col')); 
-}
+// Chat, Talk and Playlist views are personal — they never change what the room is doing.
 function setMode(mode, broadcastIt){
-     const shell = document.getElementById('activity-shell');
-     if (shell && shell.style.display !== 'flex' && !isEnteringActivity) {
-         enterActivity(mode, broadcastIt);
-         return;
-}   
-// currentMode only tracks the room's shared activity (Watch/Music/Games) —   
-// Chat/Talk/Playlist are personal views layered on top and never broadcast,   
-// so navigating to them never interrupts what everyone else is doing.   i
-if (SHARED_MODES.includes(mode)) currentMode = mode;    
+  const shell = document.getElementById('activity-shell');
+  if (shell && shell.style.display !== 'flex' && !isEnteringActivity) {
+    enterActivity(mode, broadcastIt);
+    return;
+  }
+  // currentMode only tracks the room's shared activity (Watch/Music/Games) —
+  // Chat/Talk are personal views layered on top and never broadcast,
+  // so navigating to them never interrupts what everyone else is doing.
+  if (SHARED_MODES.includes(mode)) currentMode = mode;
 
-document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));   
-const pane = document.getElementById('pane-'+mode);   
-if (pane) pane.classList.add('active');
-document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active', b.dataset.mode===mode));    
+  document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
+  const pane = document.getElementById('pane-'+mode);
+  if (pane) pane.classList.add('active');
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active', b.dataset.mode===mode));
 
-// The sidebar (who's here, quick voice toggle, chat drawer) is redundant on
-// Watch/Music/Games now that Chat and Talk are full, dedicated tabs — keep
-// it for everywhere else (Chat/Talk/Profile). Toggling a class on room-body
-// too so the grid actually reclaims the sidebar's column instead of leaving
-// blank space where it used to be.
-const sideCol = document.getElementById('side-col');
-const roomBody = document.querySelector('.room-body');
-const hideSidebar = SHARED_MODES.includes(mode);
-if (sideCol) sideCol.style.display = hideSidebar ? 'none' : '';
-if (roomBody) roomBody.classList.toggle('no-sidebar', hideSidebar);
+  // Chat page: layout locks to the viewport (message list scrolls, composer pinned above the nav).
+  saveView({ screen:'room', roomView:'activity', mode });   // remembered for reloads
+  const isChat = mode === 'chat';
+  if (shell) shell.classList.toggle('chat-active', isChat);
+  const chatActions = document.getElementById('topbar-chat-actions');
+  if (chatActions) chatActions.classList.toggle('visible', isChat);
+  const mainCol = document.getElementById('main-col');
+  if (mainCol) mainCol.classList.toggle('chat-full-bleed', isChat);
 
-if (mode === 'chat'){
-     mountChatInPage();
-     document.getElementById('chat-col').classList.add('open');
-     document.getElementById('chat-toggle-wrap').classList.remove('visible');   
-} else {
-       mountChatInSidebar();
-       document.getElementById('chat-toggle-wrap').classList.add('visible');   
-}
-const chatActions = document.getElementById('topbar-chat-actions');
-if (chatActions) chatActions.classList.toggle('visible', mode === 'chat');
-const mainCol = document.getElementById('main-col');
-if (mainCol) mainCol.classList.toggle('chat-full-bleed', mode === 'chat');
-if (mode === 'video') renderPlaylistList('video', 'playlist-video-list-inline');
-if (mode === 'music') renderPlaylistList('music', 'playlist-music-list-inline');
-if (mode === 'talk') renderTalkGrid();
-placeVideos();
-    
+  if (mode === 'video') renderPlaylistList('video', 'playlist-video-list-inline');
+  if (mode === 'music') renderPlaylistList('music', 'playlist-music-list-inline');
+  if (mode === 'talk') renderTalkGrid();
+  placeVideos();
 
-if (broadcastIt && SHARED_MODES.includes(mode)) broadcast({type:'mode', mode}); 
-// Personal "what am I up to" status — distinct from the shared-mode broadcast
-// above (which syncs the ROOM's Watch/Music/Games view), this just tells
-// everyone what I'm personally looking at, for the hub presence list.
-if (participants[myId]) participants[myId].status = mode;
-broadcast({ type:'presence-status', status: mode });
-if (typeof renderHubPresence === 'function') renderHubPresence();
+  if (isChat){
+    clearUnread();
+    scrollChatToBottom();   // always open on the latest message, not the top
+  }
+
+  if (broadcastIt && SHARED_MODES.includes(mode)) broadcast({type:'mode', mode});
+  // Personal "what am I up to" status — distinct from the shared-mode broadcast
+  // above (which syncs the ROOM's Watch/Music/Games view), this just tells
+  // everyone what I'm personally looking at, for the hub presence list.
+  if (participants[myId]) participants[myId].status = mode;
+  broadcast({ type:'presence-status', status: mode });
+  if (typeof renderHubPresence === 'function') renderHubPresence();
 }
 
 async function renderPlaylistList(kind, containerId){
@@ -301,14 +358,14 @@ async function renderPlaylistList(kind, containerId){
 
   el.innerHTML = items.map(it => `
     <div class="playlist-item">
-      <img class="playlist-thumb" src="${thumbUrl(it.video_id)}" alt="" loading="lazy">
+      <img class="playlist-thumb" src="${escapeHtml(thumbUrl(it.video_id))}" alt="" loading="lazy">
       <div class="playlist-info">
-        <div class="playlist-title" data-title-for="${it.id}">${escapeHtml(isUrlish(it.title) ? 'Loading title…' : it.title)}</div>
+        <div class="playlist-title" data-title-for="${escapeHtml(it.id)}">${escapeHtml(isUrlish(it.title) ? 'Loading title…' : it.title)}</div>
         <div class="playlist-sub">${kind === 'music' ? '🎵 Song' : '🎬 Video'}</div>
       </div>
       <span class="playlist-actions">
-        <button class="btn btn-secondary btn-sm" data-load="${it.video_id}" data-kind="${kind}" type="button">▶ Play</button>
-        <button class="icon-btn" data-remove="${it.id}" data-kind="${kind}" type="button" title="Remove">🗑</button>
+        <button class="btn btn-secondary btn-sm" data-load="${escapeHtml(it.video_id)}" data-kind="${kind}" type="button">▶ Play</button>
+        <button class="icon-btn" data-remove="${escapeHtml(it.id)}" data-kind="${kind}" type="button" title="Remove">🗑</button>
       </span>
     </div>
   `).join('');
@@ -350,6 +407,8 @@ function renderTalkGrid(){
 
     const av = document.createElement('div'); av.className = 'avatar talk-avatar'; av.dataset.peer = id;
     av.style.background = nameColor(p.name || '?'); av.textContent = initials(p.name);
+    av.style.cursor = 'pointer';
+    av.addEventListener('click', ()=> openProfileForPeer(id));
     if (speakingState[id]) av.classList.add('speaking');
     tile.appendChild(av);
 
@@ -367,17 +426,6 @@ function renderTalkGrid(){
 window.onOrbitRender = (function(prev){ return function(){ if (prev) prev(); renderTalkGrid(); }; })(window.onOrbitRender);
 window.onRemoteMode = (mode)=> setMode(mode, false);
 document.querySelectorAll('.nav-btn').forEach(b=> b.addEventListener('click', ()=>setMode(b.dataset.mode, true)));
-
-function setChatToggleLabel(open){
-  const btn = document.getElementById('btn-chat-toggle');
-  if (btn) btn.textContent = open ? '✕ Close chat' : '💬 Open chat';
-}
-document.getElementById('btn-chat-toggle').addEventListener('click', ()=>{
-  const chatCol = document.getElementById('chat-col');
-  const open = !chatCol.classList.contains('open');
-  chatCol.classList.toggle('open', open);
-  setChatToggleLabel(open);
-});
 
 window.onChannelLoading = (function(prev){
   return function(ch, videoId){
@@ -444,20 +492,17 @@ async function toggleMic(){
        }
 } 
 
+// Label for the Talk page's mic button. Voice now joins muted, so "connected but muted"
+// is the normal resting state — hence Mute/Unmute rather than Join/Leave once connected.
 function updateMicButtonsUI(on){
-     const ptt = (typeof pushToTalkOn !== 'undefined' && pushToTalkOn);
-     const sidebarBtn = document.getElementById('btn-mic');
-     if (sidebarBtn){
-           sidebarBtn.textContent = ptt ? (localStream ? (on ? '🎤 Talking…' : '🎤 Hold to talk') : '🎤 Join voice') : (on ? '🔇 Leave voice' : '🎤 Join voice');
-           sidebarBtn.classList.toggle('btn-secondary', !on);
-           sidebarBtn.classList.toggle('btn-ghost', on);
-      }
-     const talkBtn = document.getElementById('btn-mic-talk');
-     if (talkBtn){
-           talkBtn.textContent = ptt ? (localStream ? (on ? '🎤 Talking…' : '🎤 Hold to talk') : '🎤 Join voice') : (on ? '🔇 Leave voice' : '🎤 Join voice');
-           talkBtn.classList.toggle('on', on);
-      } 
-} 
+  const ptt = (typeof pushToTalkOn !== 'undefined' && pushToTalkOn);
+  const talkBtn = document.getElementById('btn-mic-talk');
+  if (!talkBtn) return;
+  talkBtn.textContent = !localStream ? '🎤 Join voice'
+    : ptt ? (on ? '🎤 Talking…' : '🎤 Hold to talk')
+    : (on ? '🔇 Mute' : '🎤 Unmute');
+  talkBtn.classList.toggle('on', on);
+}
 
 async function callAiFunction(payload, attempt){
   attempt = attempt || 1;
@@ -482,7 +527,6 @@ async function callAiFunction(payload, attempt){
 }
 
 
-document.getElementById('btn-mic').addEventListener('click', toggleMic);
 document.getElementById('btn-mic-talk').addEventListener('click', toggleMic);
 
 const AI_JOKES = [
@@ -662,6 +706,7 @@ document.getElementById('btn-settings-logout').addEventListener('click', async (
   location.reload();
 });
 window.onAuthChange = function(user){
+  if (window.__recoveryPending) return;   // mid password-reset: don't drop them into the app yet
   if (user){
     if (document.getElementById('screen-auth').style.display !== 'none') enterAppAsUser();
   } else if (document.getElementById('screen-room').style.display !== 'none'){
@@ -669,82 +714,241 @@ window.onAuthChange = function(user){
   }
 };
 
-function refreshAccountPanel(user){
-  const out = document.getElementById('account-signed-out');
-  const inn = document.getElementById('account-signed-in');
-  if (user){
-    out.style.display='none'; inn.style.display='block';
-    document.getElementById('account-email').textContent = user.email;
-  } else {
-    out.style.display='block'; inn.style.display='none';
+// ---------- Auth: sign up / log in ----------
+function setAuthTab(tab){
+  const panels = { login:'auth-login', signup:'auth-signup', forgot:'auth-forgot', reset:'auth-reset' };
+  Object.entries(panels).forEach(([name, id])=>{
+    const el = document.getElementById(id);
+    if (el) el.style.display = (name === tab) ? 'block' : 'none';
+  });
+  document.querySelectorAll('.auth-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  const tabs = document.querySelector('.auth-tabs');          // the Log in / Sign up switch only belongs on those two
+  if (tabs) tabs.style.display = (tab === 'login' || tab === 'signup') ? '' : 'none';
+  const status = document.getElementById('auth-status');
+  if (status) status.textContent = '';
+}
+document.querySelectorAll('.auth-tab').forEach(btn => btn.addEventListener('click', ()=> setAuthTab(btn.dataset.tab)));
+
+// link = { label, tab, email? } adds a tappable shortcut, e.g. "Log in instead"
+function showAuthStatus(msg, isErr, link){
+  const el = document.getElementById('auth-status');
+  if (!el) return;
+  el.textContent = msg;
+  el.style.color = isErr ? 'var(--coral-ink)' : 'var(--teal)';
+  el.style.fontWeight = isErr ? 'normal' : 'bold';
+  if (link){
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'auth-link'; b.textContent = link.label;
+    b.addEventListener('click', ()=>{
+      setAuthTab(link.tab);
+      const target = document.getElementById({ login:'login-email', signup:'signup-email', forgot:'forgot-email' }[link.tab]);
+      if (link.email && target) target.value = link.email;
+    });
+    el.appendChild(document.createTextNode(' '));
+    el.appendChild(b);
   }
 }
 
-// Auth screen - Sign up with full profile
-document.getElementById('btn-signup').addEventListener('click', async function(e){
-  e.preventDefault();
+// Live "is this nickname free?" hint while typing (quietly does nothing if the check isn't set up)
+const USERNAME_HINT = 'This is your display name everywhere in the app — like a username, and it must be unique.';
+function setUsernameStatus(text, tone){
+  const el = document.getElementById('username-status');
+  if (!el) return;
+  el.textContent = text;
+  el.style.color = tone === 'ok' ? 'var(--teal)' : (tone === 'bad' ? 'var(--coral-ink)' : '');
+}
+let usernameCheckTimer = null, usernameCheckSeq = 0;
+document.getElementById('signup-username').addEventListener('input', e=>{
+  clearTimeout(usernameCheckTimer);
+  const name = e.target.value.trim();
+  if (name.length < 2){ usernameCheckSeq++; setUsernameStatus(USERNAME_HINT); return; }
+  usernameCheckTimer = setTimeout(async ()=>{
+    const seq = ++usernameCheckSeq;
+    const free = await checkUsernameAvailable(name);
+    if (seq !== usernameCheckSeq) return;            // they kept typing — ignore the stale answer
+    if (free === true) setUsernameStatus('✓ That nickname is free', 'ok');
+    else if (free === false) setUsernameStatus('That nickname is taken — try another.', 'bad');
+    else setUsernameStatus(USERNAME_HINT);
+  }, 450);
+});
+
+function friendlySignupError(error, email){
+  const msg = String(error && error.message || '');
+  if (/already (been )?registered|already exists/i.test(msg)) showAuthStatus('That email already has an account.', true, { label:'Log in instead', tab:'login', email });
+  else if (/database error saving new user|duplicate key|unique|username/i.test(msg)) showAuthStatus('That nickname is already taken — try another.', true);
+  else if (/password/i.test(msg)) showAuthStatus(msg, true);
+  else if (/rate limit|too many/i.test(msg)) showAuthStatus('Too many attempts — please wait a minute and try again.', true);
+  else { console.error('Sign-up error:', error); showAuthStatus("Couldn't create your account. Please check your details and try again.", true); }
+}
+
+async function handleSignup(){
+  const btn = document.getElementById('btn-signup');
   const email = document.getElementById('signup-email').value.trim();
   const password = document.getElementById('signup-password').value;
   const firstName = document.getElementById('signup-first').value.trim();
   const lastName = document.getElementById('signup-last').value.trim();
   const username = document.getElementById('signup-username').value.trim();
-  
-  if (!email || !password || !firstName || !lastName || !username) {
-    showAuthStatus('Fill in all fields.', true);
-    return;
-  }
-  
-  showAuthStatus('Creating account…');
-  const { error } = await signUpWithProfile({ firstName, lastName, username, email, password });
-  if (error) {
-    showAuthStatus(error.message || 'Sign-up failed', true);
-  } else {
-    showAuthStatus('✓ Registration successful! Welcome to Together!', false);
-    setTimeout(() => {
-      document.getElementById('signup-first').value = '';
-      document.getElementById('signup-last').value = '';
-      document.getElementById('signup-username').value = '';
-      document.getElementById('signup-email').value = '';
-      document.getElementById('signup-password').value = '';
-    }, 1500);
-  }
-});
 
-// Auth screen - Log in
-document.getElementById('btn-login').addEventListener('click', async function(e){
-     e.preventDefault();
-     const email = document.getElementById('login-email').value.trim();
-     const password = document.getElementById('login-password').value;
-     if (!email || !password){ showAuthStatus('Enter an email and password.', true); return; }
-     showAuthStatus('Logging in…');
-     try{
-           const { error } = await withTimeout(signInWithEmail(email, password), 15000, "That's taking too long — check your connection and try again.");
-           if (error) showAuthStatus(error.message, true);
-           // success case: window.onAuthChange fires and calls enterAppAsUser() itself
-     }catch(err){
-           showAuthStatus(err.message || 'Something went wrong logging in.', true);
+  if (!email || !password || !firstName || !lastName || !username){ showAuthStatus('Please fill in every field.', true); return; }
+  if (!/^\S+@\S+\.\S+$/.test(email)){ showAuthStatus("That email address doesn't look right.", true); return; }
+  if (password.length < 6){ showAuthStatus('Choose a password with at least 6 characters.', true); return; }
+  if (username.length < 2){ showAuthStatus('Your nickname needs at least 2 characters.', true); return; }
+
+  btn.disabled = true;
+  try{
+    showAuthStatus('Creating your account…');
+    if (await checkUsernameAvailable(username) === false){ showAuthStatus('That nickname is already taken — try another.', true); return; }
+
+    const { data, error } = await withTimeout(
+      signUpWithProfile({ firstName, lastName, username, email, password }), 20000,
+      "That's taking too long — check your connection and try again.");
+    if (error){ friendlySignupError(error, email); return; }
+
+    // With email confirmation on, Supabase answers "already registered" with a fake success and no identities.
+    if (data && data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0){
+      showAuthStatus('That email already has an account.', true, { label:'Log in instead', tab:'login', email });
+      return;
     }
-});
 
-function showAuthStatus(msg, isErr){
-  const el = document.getElementById('auth-status');
-  if (el) {
-    el.textContent = msg; 
-    el.style.color = isErr ? 'var(--coral)' : '#2ecc71';
-    el.style.fontWeight = isErr ? 'normal' : 'bold';
+    // Signed in straight away (email confirmation off) — go in without making them log in again.
+    let signedIn = !!(data && data.session);
+    // No session yet: try signing in with the same details. This works when confirmation is off
+    // but the sign-up call didn't return a session; it fails with "not confirmed" when it's on.
+    if (!signedIn){
+      const attempt = await signInWithEmail(email, password);
+      signedIn = !attempt.error;
+    }
+    if (signedIn){
+      if (!myProfile) await loadMyProfile();
+      if (myProfile){ showAuthStatus('Welcome to Together!'); await enterAppAsUser(); return; }
+      setAuthTab('login');
+      document.getElementById('login-email').value = email;
+      showAuthStatus("Your account was created, but we couldn't load it yet. Please log in.", true);
+      return;
+    }
+    setAuthTab('login');
+    document.getElementById('login-email').value = email;
+    showAuthStatus('Account created! Check your email to confirm it, then log in.', false);
+  }catch(err){
+    console.error('Sign-up failed:', err);
+    showAuthStatus(err.message || 'Something went wrong creating your account. Please try again.', true);
+  }finally{
+    btn.disabled = false;
   }
 }
 
-// Auth tab switching
-document.querySelectorAll('.auth-tab').forEach(btn => {
-  btn.addEventListener('click', function() {
-    const tab = this.dataset.tab;
-    document.querySelectorAll('.auth-tab').forEach(b => b.classList.remove('active'));
-    this.classList.add('active');
-    document.getElementById('auth-login').style.display = tab === 'login' ? 'block' : 'none';
-    document.getElementById('auth-signup').style.display = tab === 'signup' ? 'block' : 'none';
-    document.getElementById('auth-status').textContent = '';
-  });
+function friendlyLoginError(error){
+  const msg = String(error && error.message || '');
+  if (/invalid login credentials/i.test(msg)) showAuthStatus("That email or password isn't right.", true, { label:'Forgot password?', tab:'forgot', email: document.getElementById('login-email').value.trim() });
+  else if (/not confirmed/i.test(msg)) showAuthStatus('Please confirm your email first — check your inbox for the link.', true);
+  else if (/rate limit|too many/i.test(msg)) showAuthStatus('Too many attempts — please wait a minute and try again.', true);
+  else { console.error('Login error:', error); showAuthStatus("Couldn't log you in right now. Please try again.", true); }
+}
+
+async function handleLogin(){
+  const btn = document.getElementById('btn-login');
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  if (!email || !password){ showAuthStatus('Enter your email and password.', true); return; }
+  btn.disabled = true;
+  try{
+    showAuthStatus('Logging in…');
+    const { error } = await withTimeout(signInWithEmail(email, password), 15000, "That's taking too long — check your connection and try again.");
+    if (error){ friendlyLoginError(error); return; }
+    // success: window.onAuthChange fires and calls enterAppAsUser() itself
+  }catch(err){
+    showAuthStatus(err.message || 'Something went wrong logging in.', true);
+  }finally{
+    btn.disabled = false;
+  }
+}
+
+// ---------- Forgot / reset password ----------
+// Flow: "Forgot password?" -> email with a link -> the link opens the app on the "choose a new
+// password" screen (supabase-client.js flags it) -> save -> straight into the app.
+let resetCooldownTimer = null;
+function startResetCooldown(btn, seconds){
+  clearInterval(resetCooldownTimer);
+  let left = seconds;
+  const tick = ()=>{
+    if (left <= 0){ clearInterval(resetCooldownTimer); btn.disabled = false; btn.textContent = 'Send reset link'; return; }
+    btn.disabled = true; btn.textContent = `Send again in ${left}s`; left--;
+  };
+  tick();
+  resetCooldownTimer = setInterval(tick, 1000);
+}
+
+async function handleForgot(){
+  const btn = document.getElementById('btn-forgot-send');
+  const email = document.getElementById('forgot-email').value.trim();
+  if (!/^\S+@\S+\.\S+$/.test(email)){ showAuthStatus('Enter the email you signed up with.', true); return; }
+  btn.disabled = true;
+  showAuthStatus('Sending…');
+  const { error } = await requestPasswordReset(email);
+  if (error){
+    btn.disabled = false;
+    if (/rate limit|too many|seconds/i.test(String(error.message || ''))) showAuthStatus('Please wait a minute before asking for another email.', true);
+    else { console.error('Password reset error:', error); showAuthStatus("Couldn't send the email right now. Please try again.", true); }
+    return;
+  }
+  // Same message whether or not the email has an account, on purpose.
+  showAuthStatus('If an account exists for that email, a reset link is on its way. Check your inbox (and spam).', false);
+  startResetCooldown(btn, 60);
+}
+
+function showResetScreen(){
+  appEntered = false;
+  showOnly('screen-auth', 'flex');
+  setAuthTab('reset');
+}
+window.onPasswordRecovery = showResetScreen;
+
+async function handleResetSave(){
+  const btn = document.getElementById('btn-reset-save');
+  const pw = document.getElementById('reset-password').value;
+  const pw2 = document.getElementById('reset-password2').value;
+  if (pw.length < 6){ showAuthStatus('Choose a password with at least 6 characters.', true); return; }
+  if (pw !== pw2){ showAuthStatus("The two passwords don't match.", true); return; }
+  btn.disabled = true;
+  try{
+    showAuthStatus('Saving…');
+    const { error } = await withTimeout(setNewPassword(pw), 15000, "That's taking too long — check your connection and try again.");
+    if (error){
+      const msg = String(error.message || '');
+      if (/different from the old/i.test(msg)) showAuthStatus('Choose a password you are not already using.', true);
+      else if (/session|not authenticated|missing/i.test(msg)) showAuthStatus('This reset link has expired.', true, { label:'Get a new one', tab:'forgot' });
+      else { console.error('Update password error:', error); showAuthStatus("Couldn't save your new password. Please try again.", true); }
+      return;
+    }
+    window.__recoveryPending = false;
+    if (!myProfile) await loadMyProfile();
+    if (myProfile){ showAuthStatus('Password updated — welcome back!'); await enterAppAsUser(); return; }
+    setAuthTab('login');
+    showAuthStatus('Password updated. Please log in.', false);
+  }catch(err){
+    showAuthStatus(err.message || 'Something went wrong. Please try again.', true);
+  }finally{
+    btn.disabled = false;
+  }
+}
+
+document.getElementById('btn-forgot-link').addEventListener('click', ()=>{
+  const typed = document.getElementById('login-email').value.trim();
+  setAuthTab('forgot');
+  if (typed) document.getElementById('forgot-email').value = typed;
+});
+document.getElementById('btn-forgot-back').addEventListener('click', ()=> setAuthTab('login'));
+document.getElementById('btn-forgot-send').addEventListener('click', handleForgot);
+document.getElementById('btn-reset-save').addEventListener('click', handleResetSave);
+
+document.getElementById('btn-signup').addEventListener('click', e=>{ e.preventDefault(); handleSignup(); });
+document.getElementById('btn-login').addEventListener('click', e=>{ e.preventDefault(); handleLogin(); });
+// Enter submits (these aren't <form>s)
+[['login-email','btn-login'],['login-password','btn-login'],
+ ['signup-first','btn-signup'],['signup-last','btn-signup'],['signup-username','btn-signup'],
+ ['signup-email','btn-signup'],['signup-password','btn-signup'],
+ ['forgot-email','btn-forgot-send'],['reset-password','btn-reset-save'],['reset-password2','btn-reset-save']].forEach(([input, button])=>{
+  document.getElementById(input).addEventListener('keydown', e=>{ if (e.key === 'Enter'){ e.preventDefault(); document.getElementById(button).click(); } });
 });
 
 // ---------- Save to playlist ----------
@@ -761,15 +965,17 @@ document.getElementById('btn-save-music').addEventListener('click', ()=>{
   saveFavorite('music', title, c.currentId);
 });
 
-// Logout from landing page
-const landingLogout = document.getElementById('btn-landing-logout');
-if (landingLogout) {
-  landingLogout.addEventListener('click', async ()=>{
-    await signOutUser();
-    showAuthScreen();
-    toast('Logged out');
-  });
+// Log out from the landing and saved-rooms screens. Reloading resets everything tied to the
+// old account (presence, rooms, profile) so the next person to log in starts clean.
+async function logoutAndReload(){
+  await signOutUser();
+  clearSession();
+  location.reload();
 }
+['btn-landing-logout', 'btn-saved-rooms-logout'].forEach(id=>{
+  const btn = document.getElementById(id);
+  if (btn) btn.addEventListener('click', logoutAndReload);
+});
 
 document.getElementById('btn-stop-video').addEventListener('click', ()=> YTSync.stop('video'));
 document.getElementById('btn-stop-music').addEventListener('click', ()=>{
@@ -799,22 +1005,11 @@ document.addEventListener('click', e=>{
 
 document.getElementById('entry-btn-settings').addEventListener('click', openSettings);
 
-// ---------- Profile popup ----------
-document.getElementById('entry-btn-profile').addEventListener('click', ()=>{
-  if (!myProfile) return;
-  const full = `${myProfile.first_name || ''} ${myProfile.last_name || ''}`.trim();
-  const av = document.getElementById('profile-avatar');
-  av.textContent = initials(full || myProfile.username);
-  av.style.background = nameColor(myProfile.username || full || '?');
-  document.getElementById('profile-fullname').textContent = full || myProfile.username;
-  document.getElementById('profile-username').textContent = '@' + myProfile.username;
-  document.getElementById('profile-email').textContent = (currentUser && currentUser.email) || '';
-  document.getElementById('profile-overlay').style.display = 'flex';
-});
-document.getElementById('btn-profile-close').addEventListener('click', ()=>{
-  document.getElementById('profile-overlay').style.display = 'none';
-});
-document.getElementById('profile-overlay').addEventListener('click', e=>{
-  if (e.target.id === 'profile-overlay') e.currentTarget.style.display = 'none';
-});
 
+
+// ---------- Installable app / offline shell ----------
+if ('serviceWorker' in navigator && window.isSecureContext){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('sw.js').catch(err=> console.warn('Service worker not registered:', err));
+  });
+}

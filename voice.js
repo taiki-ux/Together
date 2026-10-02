@@ -53,7 +53,7 @@ function toggleDeafen(){
   updateDeafenButtonsUI();
 }
 function updateDeafenButtonsUI(){
-  ['btn-deafen','btn-deafen-talk'].forEach(id=>{
+  ['btn-deafen-talk'].forEach(id=>{
     const btn = document.getElementById(id);
     if (!btn) return;
     btn.textContent = deafened ? '🔇' : '🔊';
@@ -61,26 +61,21 @@ function updateDeafenButtonsUI(){
     btn.classList.toggle('on', deafened);
   });
 }
-document.getElementById('btn-deafen')?.addEventListener('click', toggleDeafen);
 document.getElementById('btn-deafen-talk')?.addEventListener('click', toggleDeafen);
 
 // ---------- Auto-join on room entry ----------
+// Joins voice MUTED: you can hear everyone straight away, and nobody hears you until
+// you press Unmute (or hold the button in push-to-talk). The mic stream is acquired up
+// front so the permission prompt happens once and unmuting is instant.
 async function autoJoinVoiceIfEnabled(){
-  if (!window.autoJoinVoiceOn) return;
-  if (pushToTalkOn){
-    // Connect and stay ready, but silent until they actually hold the button —
-    // matches push-to-talk's "silent by default" expectation.
-    if (!localStream){
-      try{
-        localStream = await acquireMicStream();
-        attachSpeakingDetector(localStream, myId);
-        localStream.getAudioTracks().forEach(t=> t.enabled = false);
-        Object.keys(dataConns).forEach(id=> maybeCallPeer(id));
-      }catch(e){ console.warn('Auto-join (push-to-talk) skipped:', e.message || e); }
-    }
-  } else {
-    toggleMic();
-  }
+  if (!window.autoJoinVoiceOn || localStream) return;
+  try{
+    localStream = await acquireMicStream();
+    attachSpeakingDetector(localStream, myId);
+    localStream.getAudioTracks().forEach(t=> t.enabled = false);
+    Object.keys(dataConns).forEach(id=> maybeCallPeer(id));
+    updateMicButtonsUI(false);
+  }catch(e){ console.warn('Auto-join voice skipped:', e.message || e); }
 }
 
 // ---------- Push-to-talk ----------
@@ -115,7 +110,6 @@ function setupPushToTalkButton(id){
   btn.addEventListener('mouseleave', pressEnd);
   btn.addEventListener('touchend', pressEnd);
 }
-setupPushToTalkButton('btn-mic');
 setupPushToTalkButton('btn-mic-talk');
 
 document.getElementById('toggle-push-to-talk')?.addEventListener('click', function(){
