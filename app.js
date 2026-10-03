@@ -57,40 +57,6 @@ function showPendingNotice(){
 // holds until the saved login is checked), so refreshing feels like a refresh, not a restart.
 let pendingRestoreView = null;   // where to put the person back once they're re-connected to their room
 let appEntered = false;          // guards against entering the app twice (login event + explicit call)
-(function(){
-  const colors = ['#ff6f91','#ffd166','#5ee6d0','#a78bfa'];
-  const splash = document.getElementById('screen-splash');
-  for (let i=0;i<10;i++){
-    const p = document.createElement('div');
-    p.className='splash-particle';
-    const size = 3+Math.random()*5;
-    p.style.width=size+'px'; p.style.height=size+'px';
-    p.style.left = (Math.random()*100)+'%';
-    p.style.top = (Math.random()*100)+'%';
-    p.style.background = colors[i%colors.length];
-    p.style.animationDuration = (6+Math.random()*6)+'s';
-    p.style.animationDelay = (Math.random()*4)+'s';
-    splash.appendChild(p);
-  }
-  let returning = false;
-  try{ returning = sessionStorage.getItem('together_booted') === '1'; sessionStorage.setItem('together_booted', '1'); }catch(e){}
-  const authReady = restoreAuthSession();      // check the saved login while the splash plays
-  setTimeout(async ()=>{
-    const user = await authReady;
-    splash.style.transition = 'opacity ' + (returning ? '.2s' : '.5s') + ' ease';
-    splash.style.opacity = '0';
-    setTimeout(()=>{
-      splash.style.display = 'none';
-      if (window.__authLinkError){                      // expired / already-used reset link
-        showAuthScreen();
-        setAuthTab('forgot');
-        showAuthStatus('That reset link has expired or was already used. Enter your email to get a new one.', true);
-      } else if (window.__recoveryPending){ showResetScreen(); }
-      else if (user && myProfile) enterAppAsUser(); else showAuthScreen();
-      showPendingNotice();
-    }, returning ? 200 : 500);
-  }, returning ? 0 : 5000);
-})();
 
 // ---------- Screens ----------
 const ALL_SCREENS = ['screen-auth','screen-landing','screen-saved-rooms','screen-room','screen-profile'];
@@ -271,11 +237,15 @@ function leaveRoom(){
 document.getElementById('entry-btn-leave').addEventListener('click', leaveRoom);
 
 document.querySelectorAll('.hub-card').forEach(c=> c.addEventListener('click', ()=> enterActivity(c.dataset.mode, true)));
-document.getElementById('btn-back-to-hub').addEventListener('click', ()=>{
-  document.getElementById('activity-shell').style.display='none';
-  document.getElementById('entry-hub').style.display='flex';
+document.getElementById('btn-back-to-hub').addEventListener('click', ()=>{
+
+  document.getElementById('activity-shell').style.display='none';
+
+  document.getElementById('entry-hub').style.display='flex';
+
   window.scrollTo(0,0);
-  saveView({ roomView:'hub' });
+  saveView({ roomView:'hub' });
+
 });
 document.getElementById('btn-chat-video-call').addEventListener('click', ()=>{
   setMode('talk', false);
@@ -713,6 +683,21 @@ window.onAuthChange = function(user){
     location.reload();
   }
 };
+//--------------App boot ----------------
+(async function bootApp(){
+        try{
+          const user = await
+restoreAuthSession();
+           if (user && myProfile){
+                  enterAppAsUser();
+           } else {
+                 showAuthScreen();
+           }
+        }catch(err){
+               console.error('Failed to restore auth session:', err);
+               showAuthScreen();
+        }
+})();
 
 // ---------- Auth: sign up / log in ----------
 function setAuthTab(tab){
