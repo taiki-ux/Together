@@ -1990,3 +1990,96 @@ select:focus {
 }
 .join-playback:focus-visible{ outline:3px solid var(--coral); outline-offset:-6px; }
 .join-playback-inline{ position:relative; z-index:1; align-self:flex-start; }
+
+/* ================= Guests: sign-up prompt + profile cards ================= */
+#account-prompt-overlay{
+  position:fixed; inset:0; background:rgba(6,8,14,0.75); backdrop-filter:blur(4px);
+  z-index:55; display:none; align-items:center; justify-content:center; padding:20px;
+}
+.guest-cards{ display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px; margin-top:4px; }
+.guest-card{
+  background:var(--bg-panel); border:1px solid var(--line); border-radius:16px;
+  padding:20px 16px; text-align:center; display:flex; flex-direction:column; gap:6px;
+}
+.guest-card-icon{ font-size:28px; }
+.guest-card h4{ margin:0; font-size:15px; font-style:normal; font-weight:700; }
+.guest-card p{ margin:0 0 10px; font-size:12.5px; color:var(--text-muted); line-height:1.5; }
+.playlist-hint{ margin:-4px 0 10px; }
+
+/* ================= ❤ Favourites: heart under each queue item ================= */
+.queue-item-meta{ display:flex; align-items:center; gap:8px; margin-top:4px; }
+.fav-btn{
+  position:relative; width:30px; height:24px; padding:0; border-radius:999px; font-size:13px; line-height:1;
+  display:inline-flex; align-items:center; justify-content:center; cursor:pointer;
+  background:none; border:1px solid var(--line); transition:var(--smooth-transition);
+}
+.fav-btn::after{ content:""; position:absolute; inset:-8px; }          /* bigger invisible tap area for thumbs */
+.fav-btn:hover{ border-color:var(--coral); transform:scale(1.08); }
+.fav-btn.on{ border-color:var(--coral); background:rgba(255,111,145,0.14); }
+.fav-btn:focus-visible{ outline:2px solid var(--coral); outline-offset:2px; }
+
+/* ================= Full-height video ("cinema") ================= */
+html.cinema-open, html.cinema-open body{ overflow:hidden; }
+#toast-container{ z-index:300; }                                       /* errors must stay visible over the video */
+
+.video-frame.cinema{
+  --rail-w:56px;
+  --rail-total:calc(var(--rail-w) + env(safe-area-inset-left, 0px));
+  position:fixed; inset:0; z-index:200; width:100vw; height:100vh; height:100dvh;
+  border-radius:0; border:none; aspect-ratio:auto; box-shadow:none; background:#000;
+  container-type:size;
+}
+/* Phone held upright: turn the picture sideways so it fills the screen (the viewer turns the phone) */
+.video-frame.cinema.cinema-rotated{
+  inset:auto; top:0; left:0;
+  width:100vh; width:100dvh; height:100vw; height:100dvw;
+  transform-origin:0 0;
+  transform:translateX(100vw) rotate(90deg);
+  transform:translateX(100dvw) rotate(90deg);
+}
+.video-frame.cinema.cinema-rotated.cinema-flipped{
+  transform:translateY(100vh) rotate(-90deg);
+  transform:translateY(100dvh) rotate(-90deg);
+}
+/* The player takes everything except the rail */
+.video-frame.cinema > #yt-player-video,
+.video-frame.cinema iframe{
+  position:absolute; top:0; bottom:0; right:0; left:var(--rail-total);
+  width:calc(100% - var(--rail-total)); height:100%;
+}
+
+/* The rail: slim, full height, down the left edge. Always dark — it sits on top of video. */
+.fs-rail{ display:none; }
+.video-frame.cinema > .fs-rail{
+  display:flex; flex-direction:column; align-items:center; justify-content:space-between; gap:6px;
+  position:absolute; left:0; top:0; bottom:0; z-index:25;
+  width:var(--rail-total); height:100%; box-sizing:border-box;
+  padding:max(6px, env(safe-area-inset-top, 0px)) 4px 6px calc(4px + env(safe-area-inset-left, 0px));
+  background:rgba(8,10,18,0.86); backdrop-filter:blur(6px);
+}
+.fs-group{ display:flex; flex-direction:column; align-items:center; gap:4px; }
+.fs-btn{
+  width:40px; height:40px; padding:0; border:none; border-radius:12px; cursor:pointer;
+  display:grid; place-items:center; font-size:19px; line-height:1; color:#fff;
+  background:rgba(255,255,255,0.09); transition:background .15s ease, transform .1s ease;
+}
+.fs-btn:hover{ background:rgba(255,255,255,0.18); }
+.fs-btn:active{ transform:scale(0.92); }
+.fs-btn:disabled{ opacity:0.35; cursor:default; }
+.fs-btn:focus-visible{ outline:2px solid var(--coral); outline-offset:2px; }
+/* Short screens show the essentials; taller ones get a 4th emoji and a play/pause button.
+   (Everything is always reachable through ＋.) */
+.fs-emoji-extra, .fs-play-extra{ display:none; }
+@container (min-height: 400px){ .fs-emoji-extra, .fs-play-extra{ display:grid; } }
+@container (max-height: 330px){ .fs-btn{ width:34px; height:34px; font-size:16px; border-radius:10px; } }
+
+/* All reactions (+ play/pause and "rotate the other way") */
+.video-frame > .fs-picker{ display:none; width:auto; height:auto; }
+.video-frame.cinema > .fs-picker:not([hidden]){
+  display:grid; grid-template-columns:repeat(4, 40px); gap:6px;
+  position:absolute; z-index:30; left:calc(var(--rail-total) + 8px); top:50%; transform:translateY(-50%);
+  max-height:calc(100% - 16px); overflow:auto; padding:8px; border-radius:16px;
+  background:rgba(10,12,22,0.94); border:1px solid rgba(255,255,255,0.14); backdrop-filter:blur(8px);
+}
+.fs-tools{ grid-column:1 / -1; display:flex; justify-content:center; gap:6px; padding-top:6px; border-top:1px solid rgba(255,255,255,0.14); }
+.video-frame > .fs-rail{ width:var(--rail-total); }

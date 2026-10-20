@@ -95,7 +95,7 @@ function ytCreateOrLoad(ch, videoId, startTime){
   if (!c.player){
     const opts = {
       videoId,
-      playerVars:{ rel:0, playsinline:1, autoplay: c.playing ? 1 : 0, start: Math.floor(start) },
+      playerVars:{ rel:0, playsinline:1, fs: ch === 'video' ? 0 : 1, autoplay: c.playing ? 1 : 0, start: Math.floor(start) },
       events:{
         onReady: ()=>{
           c.ready = true;

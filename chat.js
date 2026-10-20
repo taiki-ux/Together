@@ -51,7 +51,7 @@ function formatTime(ts){
 // away if someone explicitly deletes it (still a soft delete, matching the
 // placeholder behavior below).
 function saveMessageToDb(msg){
-  if (!supabaseClient || !roomCode) return;
+  if (!supabaseClient || !roomCode || !currentUser) return;   // guests: live chat only, nothing is saved
   supabaseClient.from('chat_messages').insert({
     id: msg.id, room_code: roomCode,
     sender_id: currentUser ? currentUser.id : null,
@@ -61,12 +61,12 @@ function saveMessageToDb(msg){
   }).then(({ error })=>{ if (error) console.error('Failed to save chat message:', error); });
 }
 function updateMessageInDb(id, fields){
-  if (!supabaseClient) return;
+  if (!supabaseClient || !currentUser) return;
   supabaseClient.from('chat_messages').update(fields).eq('id', id)
     .then(({ error })=>{ if (error) console.error('Failed to update chat message:', error); });
 }
 async function loadChatHistory(){
-  if (!supabaseClient || !roomCode) return;
+  if (!supabaseClient || !roomCode || !currentUser) return;   // guests start with a fresh log
   const { data, error } = await supabaseClient
     .from('chat_messages').select('*').eq('room_code', roomCode)
     .order('created_at', { ascending:true }).limit(500);

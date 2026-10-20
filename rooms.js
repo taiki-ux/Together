@@ -23,7 +23,7 @@ async function fetchMySavedRooms(){
   return data || [];
 }
 async function saveCurrentRoom(name, icon, privacy){
-  if (!currentUser || !supabaseClient){ toast('Log in to save rooms'); return false; }
+  if (!currentUser || !supabaseClient){ requireAccount('save rooms'); return false; }
   const { error } = await supabaseClient.from('rooms').insert({
     code: roomCode, name, owner_id: currentUser.id,
     icon: icon || '🎬', privacy: privacy === 'private' ? 'private' : 'open'
@@ -151,6 +151,7 @@ document.getElementById('btn-back-to-rooms').addEventListener('click', ()=> show
 // ---------- Save-this-room inline bar (shown once inside a room) ----------
 let selectedRoomIcon = '🎬';
 document.getElementById('entry-btn-save-room').addEventListener('click', ()=>{
+  if (!requireAccount('save rooms')) return;
   const bar = document.getElementById('save-room-bar');
   bar.style.display = bar.style.display==='flex' ? 'none' : 'flex';
   if (bar.style.display==='flex') document.getElementById('save-room-name').focus();

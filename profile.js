@@ -154,6 +154,7 @@ function wireFriendButton(userId, friendInfo){
   const btn = document.getElementById('btn-friend-action');
   if (!btn) return;
   btn.addEventListener('click', async ()=>{
+    if (isGuest()){ requireAccount('add friends'); return; }
     if (btn.dataset.status === 'none'){
       await sendFriendRequest(userId);
       toast('Friend request sent 👋');
@@ -231,6 +232,79 @@ function showProfileEditForm(profile){
   document.getElementById('btn-cancel-profile-edit').addEventListener('click', ()=>{ formEl.style.display='none'; formEl.innerHTML=''; });
 }
 
+// ---------- My playlist (everything I saved with 📌, across rooms) ----------
+let myPlaylistItems = [];
+async function renderMyPlaylistHTML(){
+  myPlaylistItems = await rpFetchMine(60);
+  let html = `<div class="profile-taste-section"><h4>📌 My playlist</h4>`;
+  if (!myPlaylistItems.length){
+    return html + `<p class="hint">Songs and videos you save with 📌 in a room show up here. Only you see them on your profile.</p></div>`;
+  }
+  html += `<div class="playlist-list">` + myPlaylistItems.map(it=>`
+    <div class="playlist-item">
+      <img class="playlist-thumb" src="${escapeHtml(thumbUrl(it.videoId))}" alt="" loading="lazy">
+      <div class="playlist-info">
+        <div class="playlist-title">${escapeHtml(it.title)}</div>
+        <div class="playlist-sub">${it.kind === 'music' ? '🎵 Song' : '🎬 Video'} · saved in ${escapeHtml(it.roomName || 'a room')}</div>
+      </div>
+      <span class="playlist-actions">
+        <button class="btn btn-secondary btn-sm" data-my-play="${escapeHtml(it.id)}" type="button">▶ Play</button>
+        <button class="icon-btn" data-my-remove="${escapeHtml(it.id)}" type="button" title="Remove" aria-label="Remove from my playlist">🗑</button>
+      </span>
+    </div>`).join('') + `</div></div>`;
+  return html;
+}
+function wireMyPlaylistButtons(){
+  document.querySelectorAll('[data-my-play]').forEach(btn=> btn.addEventListener('click', ()=>{
+    const it = myPlaylistItems.find(i => i.id === btn.dataset.myPlay); if (!it) return;
+    closeProfileScreen();
+    playNow(it.kind, it.videoId, it.title);     // plays it in the room you're in right now
+    setMode(it.kind, true);
+  }));
+  document.querySelectorAll('[data-my-remove]').forEach(btn=> btn.addEventListener('click', async ()=>{
+    if (await rpRemoveMine(btn.dataset.myRemove)){ toast('Removed from your playlist'); renderProfile(currentUser.id, myName, true); }
+  }));
+}
+
+// ---------- ❤ Favourites (hearted in the queue) ----------
+function renderFavouritesHTML(items, isOwn){
+  if (!items.length && !isOwn) return '';
+  let html = `<div class="profile-taste-section"><h4>❤️ Favourites</h4>`;
+  if (!items.length) return html + `<p class="hint">Tap the 🤍 under any video or song in the queue and it lands here.</p></div>`;
+  html += `<div class="playlist-list">` + items.map(it=>`
+    <div class="playlist-item">
+      <img class="playlist-thumb" src="${escapeHtml(thumbUrl(it.video_id))}" alt="" loading="lazy">
+      <div class="playlist-info">
+        <div class="playlist-title" data-fav-title-for="${escapeHtml(it.id)}">${escapeHtml(isUrlish(it.title) ? 'Loading title…' : it.title)}</div>
+        <div class="playlist-sub">${it.kind === 'music' ? '🎵 Song' : '🎬 Video'}</div>
+      </div>
+      <span class="playlist-actions">
+        <button class="btn btn-secondary btn-sm" data-fav-play="${escapeHtml(it.id)}" type="button">▶ Play</button>
+        ${isOwn ? `<button class="icon-btn" data-fav-remove="${escapeHtml(it.id)}" type="button" title="Remove" aria-label="Remove from favourites">🗑</button>` : ''}
+      </span>
+    </div>`).join('') + `</div></div>`;
+  return html;
+}
+function wireFavouriteButtons(items, isOwn){
+  document.querySelectorAll('[data-fav-play]').forEach(btn=> btn.addEventListener('click', ()=>{
+    const it = items.find(i => i.id === btn.dataset.favPlay); if (!it) return;
+    closeProfileScreen();
+    playNow(it.kind, it.video_id, it.title);       // plays it in the room you're in right now
+    setMode(it.kind, true);
+  }));
+  if (!isOwn) return;
+  document.querySelectorAll('[data-fav-remove]').forEach(btn=> btn.addEventListener('click', async ()=>{
+    if (await removeFavouriteById(btn.dataset.favRemove)){ toast('Removed from your favourites'); renderProfile(currentUser.id, myName, true); }
+  }));
+  // Older saves may only have a link as their title — look up the real name and tidy it
+  items.filter(it => isUrlish(it.title)).forEach(async it=>{
+    const real = (await fetchVideoTitle(it.video_id)) || 'YouTube video';
+    const node = document.querySelector(`[data-fav-title-for="${it.id}"]`);
+    if (node) node.textContent = real;
+    if (real !== 'YouTube video') updateFavouriteTitle(it.id, real);
+  });
+}
+
 async function renderProfile(userId, fallbackName, isOwn){
   const container = document.getElementById('profile-view');
   if (!container) return;
@@ -238,11 +312,38 @@ async function renderProfile(userId, fallbackName, isOwn){
   saveView({ profile: { userId, name: fallbackName || '', isOwn: !!isOwn } });   // so a reload reopens this profile
 
   if (!userId){
+    if (isOwn){
+      // A guest looking at their own profile: nothing to show yet, just the way in
+      container.innerHTML = `
+        <div class="profile-header">
+          <div class="profile-avatar" style="background:${nameColor(fallbackName||'?')}">${initials(fallbackName)}</div>
+          <div class="profile-name">${escapeHtml(fallbackName||'Guest')}</div>
+          <div class="profile-username">Guest</div>
+          <p class="profile-bio">You're using Together as a guest. Create a free account to get your own profile, save playlists and favourites, keep your chat history and save rooms.</p>
+        </div>
+        <div class="guest-cards">
+          <div class="guest-card">
+            <div class="guest-card-icon">✨</div>
+            <h4>New here?</h4>
+            <p>Create a free account in a minute.</p>
+            <button class="btn btn-primary btn-block" id="btn-profile-signup" type="button">Sign up</button>
+          </div>
+          <div class="guest-card">
+            <div class="guest-card-icon">👋</div>
+            <h4>Already a member?</h4>
+            <p>Log in to pick up where you left off.</p>
+            <button class="btn btn-secondary btn-block" id="btn-profile-login" type="button">Log in</button>
+          </div>
+        </div>`;
+      document.getElementById('btn-profile-signup').addEventListener('click', ()=> upgradeFromGuest('signup'));
+      document.getElementById('btn-profile-login').addEventListener('click', ()=> upgradeFromGuest('login'));
+      return;
+    }
     container.innerHTML = `
       <div class="profile-header">
         <div class="profile-avatar" style="background:${nameColor(fallbackName||'?')}">${initials(fallbackName)}</div>
         <div class="profile-name">${escapeHtml(fallbackName||'Guest')}</div>
-        <p class="hint">Hasn't signed in — no profile to show yet.</p>
+        <p class="hint">${escapeHtml(fallbackName||'This person')} is a guest — no profile to show.</p>
       </div>`;
     return;
   }
@@ -251,14 +352,16 @@ async function renderProfile(userId, fallbackName, isOwn){
   const friendInfo = isOwn ? null : await fetchFriendshipStatus(userId);
   const online = isUserOnline(userId);
 
-  const [recentVideo, recentMusic, topVideo, topMusic, topGames] = await Promise.all([
+  const [recentVideo, recentMusic, topVideo, topMusic, topGames, favourites] = await Promise.all([
     fetchRecentActivityFor(userId, 'video', 6),
     fetchRecentActivityFor(userId, 'music', 6),
     fetchTopPlayedFor(userId, 'video', 5),
     fetchTopPlayedFor(userId, 'music', 5),
-    fetchTopPlayedFor(userId, 'game', 5)
+    fetchTopPlayedFor(userId, 'game', 5),
+    fetchFavouritesFor(userId, 40)
   ]);
   const friendsHTML = isOwn ? await renderOwnFriendsHTML() : '';
+  const playlistHTML = isOwn ? await renderMyPlaylistHTML() : '';
 
   const displayName = (profile ? `${profile.first_name||''} ${profile.last_name||''}`.trim() : '') || fallbackName || 'Someone';
   const username = profile ? profile.username : null;
@@ -277,19 +380,24 @@ async function renderProfile(userId, fallbackName, isOwn){
     </div>
     <div id="profile-edit-form" style="display:none;"></div>
 
-    ${renderTasteSection('🎬 Favorite videos', topVideo)}
+    ${renderFavouritesHTML(favourites, isOwn)}
+    ${renderTasteSection('🎬 Most watched', topVideo)}
     ${renderTasteSection('🕓 Recently watched', recentVideo, true)}
-    ${renderTasteSection('🎵 Favorite tracks', topMusic)}
+    ${renderTasteSection('🎵 Most played', topMusic)}
     ${renderTasteSection('🕓 Recently played', recentMusic, true)}
-    ${renderTasteSection('🎮 Favorite games', topGames)}
+    ${renderTasteSection('🎮 Most played games', topGames)}
+
+    ${playlistHTML}
 
     ${friendsHTML}
   `;
 
+  wireFavouriteButtons(favourites, isOwn);
   if (isOwn){
     const editBtn = document.getElementById('btn-edit-profile');
     if (editBtn) editBtn.addEventListener('click', ()=> showProfileEditForm(profile));
     wireOwnFriendsSectionButtons();
+    wireMyPlaylistButtons();
   } else {
     wireFriendButton(userId, friendInfo);
   }

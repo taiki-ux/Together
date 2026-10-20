@@ -46,6 +46,7 @@
       <div class="field"><label>Password</label><input type="password" id="login-password" placeholder="Your password" autocomplete="current-password"></div>
       <button class="btn btn-primary btn-block" id="btn-login">Log in</button>
       <div style="text-align:center; margin-top:14px; font-size:13px;"><button type="button" class="auth-link" id="btn-forgot-link">Forgot password?</button></div>
+      <div style="text-align:center; margin-top:10px; font-size:13px;"><button type="button" class="auth-link" id="btn-guest-link-login">Just looking? Continue as guest</button></div>
     </div>
     
     <div id="auth-signup" style="display:none;">
@@ -61,9 +62,17 @@
       <div class="field"><label>Email</label><input type="text" id="signup-email" placeholder="you@example.com" autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false"></div>
       <div class="field"><label>Password</label><input type="password" id="signup-password" placeholder="At least 6 characters" autocomplete="new-password"></div>
       <button class="btn btn-primary btn-block" id="btn-signup">Create account</button>
+      <div style="text-align:center; margin-top:14px; font-size:13px;"><button type="button" class="auth-link" id="btn-guest-link-signup">Just looking? Continue as guest</button></div>
     </div>
     
-        <div id="auth-forgot" style="display:none;">
+        <div id="auth-guest" style="display:none;">
+      <p class="hint" style="margin:0 0 14px;">No account needed to watch, listen, chat and play. Just pick a nickname. You won't be able to save playlists, keep chat history, save rooms or have a profile until you sign up.</p>
+      <div class="field"><label>Nickname</label><input type="text" id="guest-name" maxlength="20" placeholder="What should we call you?" autocomplete="nickname" autocapitalize="none" spellcheck="false"></div>
+      <button class="btn btn-secondary btn-block" id="btn-guest-go" type="button">Continue as guest</button>
+      <button class="btn btn-ghost btn-sm btn-block" id="btn-guest-back" type="button" style="margin-top:10px;">← Back</button>
+    </div>
+
+    <div id="auth-forgot" style="display:none;">
       <p class="hint" style="margin:0 0 14px;">Enter the email you signed up with and we'll send you a link to choose a new password.</p>
       <div class="field"><label>Email</label><input type="text" id="forgot-email" placeholder="you@example.com" autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false"></div>
       <button class="btn btn-primary btn-block" id="btn-forgot-send" type="button">Send reset link</button>
@@ -224,6 +233,22 @@
            </div>
            <div class="reaction-layer" id="reaction-layer-video"></div>
            <button class="join-playback" id="join-playback-video" type="button" style="display:none;">▶ Tap to join playback</button>
+           <div class="fs-rail" id="fs-rail" role="toolbar" aria-orientation="vertical" aria-label="Video controls">
+             <button class="fs-btn" id="fs-exit" type="button" aria-label="Exit full screen" title="Exit full screen">✕</button>
+             <div class="fs-group">
+               <button class="fs-btn fs-emoji" data-emoji="😂" type="button" aria-label="React 😂">😂</button>
+               <button class="fs-btn fs-emoji" data-emoji="❤️" type="button" aria-label="React ❤️">❤️</button>
+               <button class="fs-btn fs-emoji" data-emoji="😭" type="button" aria-label="React 😭">😭</button>
+               <button class="fs-btn fs-emoji fs-emoji-extra" data-emoji="😱" type="button" aria-label="React 😱">😱</button>
+               <button class="fs-btn" id="fs-more" type="button" aria-label="More reactions" aria-haspopup="true" aria-expanded="false" title="More reactions">＋</button>
+             </div>
+             <div class="fs-group">
+               <button class="fs-btn" id="fs-prev" type="button" aria-label="Previous video" title="Previous">⏮</button>
+               <button class="fs-btn fs-play-extra" id="fs-play" type="button" aria-label="Play or pause" title="Play / pause">⏸</button>
+               <button class="fs-btn" id="fs-next" type="button" aria-label="Next video" title="Next">⏭</button>
+             </div>
+           </div>
+           <div class="fs-picker" id="fs-picker" role="menu" aria-label="All reactions" hidden></div>
          </div>
          <div class="reaction-bar">
            <button class="reaction-btn" data-emoji="😂" type="button">😂</button>
@@ -264,7 +289,7 @@
             <button class="btn btn-ghost btn-sm" id="btn-stop-video">⏹ Stop</button>
             <button class="btn btn-ghost btn-sm" id="btn-sync-video">🔄 Sync everyone to me</button>
             <button class="btn btn-ghost btn-sm" id="btn-fullscreen">⛶ Full screen</button>
-            <button class="btn btn-ghost btn-sm" id="btn-save-video" type="button" title="Save to your playlist">⭐ Save</button>
+            <button class="btn btn-ghost btn-sm" id="btn-save-video" type="button" title="Save to this room's playlist">📌 Save</button>
             <div class="seek-group">
               <span class="hint">Jump to</span>
               <input type="text" id="input-seek-video" placeholder="1:23">
@@ -274,7 +299,8 @@
           <p class="hint">Synced to the whole room automatically. Head to the 🗨️ Chat tab to talk while you watch.</p>
 
           <div class="inline-playlist-section">
-            <h4 class="queue-heading">⭐ Video Playlist</h4>
+            <h4 class="queue-heading">📌 Room playlist</h4>
+            <p class="hint playlist-hint">Saved by people in this room. Each one also stays on the profile of whoever saved it.</p>
             <div id="playlist-video-list-inline" class="playlist-list"></div>
           </div>
         </div>
@@ -336,7 +362,7 @@
             <button class="btn btn-ghost btn-sm" id="btn-pause-music">⏸ Pause</button>
             <button class="btn btn-ghost btn-sm" id="btn-stop-music">⏹ Stop</button>
             <button class="btn btn-ghost btn-sm" id="btn-sync-music">🔄 Sync everyone to me</button>
-                       <button class="btn btn-ghost" id="btn-save-music" type="button" title="Save to your playlist">⭐</button>
+                       <button class="btn btn-ghost" id="btn-save-music" type="button" title="Save to this room's playlist" aria-label="Save to this room's playlist">📌</button>
             <div class="seek-group">
               <span class="hint">Jump to</span>
               <input type="text" id="input-seek-music" placeholder="1:23">
@@ -356,7 +382,8 @@
           <p class="hint">Same sync engine as the video room. Head to the 🗨️ Chat tab to talk — mention <b>@Buddy</b> there for a joke or a recommendation.</p>
 
           <div class="inline-playlist-section">
-            <h4 class="queue-heading">⭐ Music Playlist</h4>
+            <h4 class="queue-heading">📌 Room playlist</h4>
+            <p class="hint playlist-hint">Saved by people in this room. Each one also stays on the profile of whoever saved it.</p>
             <div id="playlist-music-list-inline" class="playlist-list"></div>
           </div>
         </div>
@@ -611,6 +638,17 @@
   </div>
 </div>
 
+<div id="account-prompt-overlay">
+  <div class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="account-prompt-title" style="text-align:center;">
+    <div style="font-size:36px; margin-bottom:6px;" aria-hidden="true">🔒</div>
+    <h2 id="account-prompt-title" style="margin-bottom:8px;">Free account needed</h2>
+    <p class="hint" id="account-prompt-text" style="margin:0 0 18px; font-size:13.5px;"></p>
+    <button class="btn btn-primary btn-block" id="btn-prompt-signup" type="button">Sign up</button>
+    <button class="btn btn-secondary btn-block" id="btn-prompt-login" type="button" style="margin-top:10px;">Log in</button>
+    <button class="btn btn-ghost btn-block btn-sm" id="btn-prompt-close" type="button" style="margin-top:10px;">Not now</button>
+  </div>
+</div>
+
 <div id="toast-container"></div>
 
 <!-- External libraries (no dependencies) -->
@@ -633,7 +671,9 @@
 <script src="profile.js"></script>
 <script src="music-player.js"></script>
 <script src="playlists.js"></script>
+<script src="room-playlist.js"></script>
 <script src="video-call.js"></script>
+<script src="cinema.js"></script>
 <script src="background.js"></script>
 <script src="games.js"></script>
 

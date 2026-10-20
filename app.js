@@ -86,12 +86,13 @@ let appEntered = false;          // guards against entering the app twice (login
         setAuthTab('forgot');
         showAuthStatus('That reset link has expired or was already used. Enter your email to get a new one.', true);
       } else if (window.__recoveryPending){ showResetScreen(); }
-      else if (user && myProfile) enterAppAsUser(); else showAuthScreen();
+      else if (user && myProfile) enterAppAsUser();
+      else if (getGuestName()) enterAppAsGuest(getGuestName());
+      else showAuthScreen();
       showPendingNotice();
     }, returning ? 200 : 500);
   }, returning ? 0 : 5000);
 })();
-
 
 // ---------- Screens ----------
 const ALL_SCREENS = ['screen-auth','screen-landing','screen-saved-rooms','screen-room','screen-profile'];
@@ -104,14 +105,24 @@ function showAuthScreen(){
   // Never logged in on this device? Start on Sign up rather than a login they can't use yet.
   let known = false;
   try{ known = localStorage.getItem('together_has_account') === '1'; }catch(e){}
-  setAuthTab(known ? 'login' : 'signup');
+  let next = null;                                   // set when a guest chose Sign up / Log in
+  try{ next = sessionStorage.getItem('together_next_tab'); sessionStorage.removeItem('together_next_tab'); }catch(e){}
+  setAuthTab(next || (known ? 'login' : 'signup'));
 }
 function showLandingScreen(){
   showOnly('screen-landing', 'flex');
   saveView({ screen:'landing' });
+  const logout = document.getElementById('btn-landing-logout');
+  if (logout) logout.textContent = isGuest() ? '← Back to sign in' : 'Log out';
+  const yourRooms = document.getElementById('btn-back-to-rooms');
+  if (yourRooms) yourRooms.style.display = isGuest() ? 'none' : '';
 }
 
 // ---------- Post-login entry point ----------
+const GUEST_KEY = 'together_guest';
+function getGuestName(){ try{ return sessionStorage.getItem(GUEST_KEY) || null; }catch(e){ return null; } }
+function setGuestName(name){ try{ if (name) sessionStorage.setItem(GUEST_KEY, name); else sessionStorage.removeItem(GUEST_KEY); }catch(e){} }
+
 async function enterAppAsUser(){
   if (appEntered || window.__recoveryPending) return;
   if (!myProfile){
@@ -121,9 +132,22 @@ async function enterAppAsUser(){
   }
   appEntered = true;
   try{ localStorage.setItem('together_has_account', '1'); }catch(e){}
+  setGuestName(null);
   myName = myProfile.username || 'User';
   if (typeof startGlobalPresence === 'function' && currentUser) startGlobalPresence(currentUser.id);
+  await routeIntoApp();
+}
 
+// Guests need only a nickname. They can watch, listen, chat and play — but nothing is saved for them.
+async function enterAppAsGuest(name){
+  if (appEntered || window.__recoveryPending) return;
+  appEntered = true;
+  myName = name;
+  setGuestName(name);
+  await routeIntoApp();
+}
+
+async function routeIntoApp(){
   const invited = takeInvite();
   const saved = getSavedSession();
 
@@ -149,7 +173,7 @@ async function enterAppAsUser(){
 
   // Otherwise: back to the screen they were on, or home (their saved rooms, else create/join).
   const view = readView();
-  if (view && view.screen === 'landing'){ showLandingScreen(); return; }
+  if (isGuest() || (view && view.screen === 'landing')){ showLandingScreen(); return; }
   let rooms = [];
   try{ rooms = await fetchMySavedRooms(); }catch(e){ console.warn('Could not load saved rooms:', e); }
   if (rooms.length) showSavedRoomsScreen(rooms); else showLandingScreen();
@@ -224,6 +248,10 @@ window.onPeerReady = async function(){
   document.getElementById('input-rename').value = myName;
   if (typeof loadChatHistory === 'function') await loadChatHistory();
   addSystemMessage(isHost ? `Room created. Share the code "${roomCode}" with your friends.` : `You joined "${roomCode}".`);
+  if (isGuest()) addSystemMessage("You're here as a guest — chat messages and playlists aren't saved. Sign up any time from ☰ → Profile.");
+  loadMyFavourites();                  // so the hearts in the queue show what's already a favourite
+  RoomPlaylist.reset();
+  rpLoadFromDb();                      // members get the room's saved playlist; guests get it live from the others
   if (typeof requestWakeLock === 'function') requestWakeLock();
   // After a reload: back to the page (and profile) they were on
   if (restore && restore.roomView === 'activity' && restore.mode) enterActivity(restore.mode, false);
@@ -271,15 +299,11 @@ function leaveRoom(){
 document.getElementById('entry-btn-leave').addEventListener('click', leaveRoom);
 
 document.querySelectorAll('.hub-card').forEach(c=> c.addEventListener('click', ()=> enterActivity(c.dataset.mode, true)));
-document.getElementById('btn-back-to-hub').addEventListener('click', ()=>{
-
-  document.getElementById('activity-shell').style.display='none';
-
-  document.getElementById('entry-hub').style.display='flex';
-
+document.getElementById('btn-back-to-hub').addEventListener('click', ()=>{
+  document.getElementById('activity-shell').style.display='none';
+  document.getElementById('entry-hub').style.display='flex';
   window.scrollTo(0,0);
-  saveView({ roomView:'hub' });
-
+  saveView({ roomView:'hub' });
 });
 document.getElementById('btn-chat-video-call').addEventListener('click', ()=>{
   setMode('talk', false);
@@ -350,52 +374,59 @@ function setMode(mode, broadcastIt){
   if (typeof renderHubPresence === 'function') renderHubPresence();
 }
 
-async function renderPlaylistList(kind, containerId){
+// The playlist shown in a room is the ROOM's playlist: what people saved with 📌 while here.
+// Each song appears once with everyone who saved it; only your own saves can be removed by you.
+function renderPlaylistList(kind, containerId){
   const el = document.getElementById(containerId);
   if (!el) return;
-  el.innerHTML = '<p class="hint">Loading…</p>';
-  let items = [];
-  try{ items = await loadFavorites(kind); }
-  catch(e){ console.error('Failed to load favorites:', e); el.innerHTML = '<p class="hint">Couldn\'t load these right now.</p>'; return; }
+  const groups = rpGroups(kind);
+  if (groups.length === 0){
+    el.innerHTML = `<p class="hint">Nothing saved in this room yet — tap 📌 Save while something is playing.</p>`;
+    return;
+  }
+  const byVideo = {};
+  groups.forEach(g => { byVideo[g.videoId] = g; });
+  el.innerHTML = groups.map(g=>{
+    const savers = [...new Set(g.rows.map(r => r.savedByName))].join(', ');
+    const mine = rpRowMine(g);
+    return `
+      <div class="playlist-item">
+        <img class="playlist-thumb" src="${escapeHtml(thumbUrl(g.videoId))}" alt="" loading="lazy">
+        <div class="playlist-info">
+          <div class="playlist-title">${escapeHtml(g.title)}</div>
+          <div class="playlist-sub">📌 saved by ${escapeHtml(savers)}</div>
+        </div>
+        <span class="playlist-actions">
+          <button class="btn btn-secondary btn-sm" data-play="${escapeHtml(g.videoId)}" type="button">▶ Play</button>
+          <button class="icon-btn" data-queue="${escapeHtml(g.videoId)}" type="button" title="Add to queue" aria-label="Add to queue">➕</button>
+          ${mine ? `<button class="icon-btn" data-remove="${escapeHtml(mine.id)}" type="button" title="Remove my save" aria-label="Remove my save">🗑</button>` : ''}
+        </span>
+      </div>`;
+  }).join('');
 
-  if (!items || items.length === 0){ el.innerHTML = '<p class="hint">Nothing saved yet — hit ⭐ next to Load.</p>'; return; }
-
-  el.innerHTML = items.map(it => `
-    <div class="playlist-item">
-      <img class="playlist-thumb" src="${escapeHtml(thumbUrl(it.video_id))}" alt="" loading="lazy">
-      <div class="playlist-info">
-        <div class="playlist-title" data-title-for="${escapeHtml(it.id)}">${escapeHtml(isUrlish(it.title) ? 'Loading title…' : it.title)}</div>
-        <div class="playlist-sub">${kind === 'music' ? '🎵 Song' : '🎬 Video'}</div>
-      </div>
-      <span class="playlist-actions">
-        <button class="btn btn-secondary btn-sm" data-load="${escapeHtml(it.video_id)}" data-kind="${kind}" type="button">▶ Play</button>
-        <button class="icon-btn" data-remove="${escapeHtml(it.id)}" data-kind="${kind}" type="button" title="Remove">🗑</button>
-      </span>
-    </div>
-  `).join('');
-
-  el.querySelectorAll('[data-load]').forEach(btn=>{
+  el.querySelectorAll('[data-play]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
-      YTSync.load(btn.dataset.kind, btn.dataset.load);
-      setMode(btn.dataset.kind, true);
+      const g = byVideo[btn.dataset.play]; if (!g) return;
+      playNow(kind, g.videoId, g.title);
+      setMode(kind, true);
+    });
+  });
+  el.querySelectorAll('[data-queue]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const g = byVideo[btn.dataset.queue]; if (!g) return;
+      addToQueue(kind, g.videoId, g.title);
+      toast('Added to the queue 🎶');
     });
   });
   el.querySelectorAll('[data-remove]').forEach(btn=>{
-    btn.addEventListener('click', async ()=>{
-      try{ await deleteFavorite(btn.dataset.remove); }
-      catch(e){ console.error('Failed to remove favorite:', e); toast("Couldn't remove that item", 'err'); return; }
-      renderPlaylistList(btn.dataset.kind, containerId);
-    });
-  });
-
-  // Old saves that only stored a link: look up the real name and fix them
-  items.filter(it => isUrlish(it.title)).forEach(async it=>{
-    const t = (await fetchVideoTitle(it.video_id)) || 'YouTube video';
-    const node = el.querySelector(`[data-title-for="${it.id}"]`);
-    if (node) node.textContent = t;
-    if (t !== 'YouTube video') updateFavoriteTitle(it.id, t);
+    btn.addEventListener('click', ()=> rpRemoveMine(btn.dataset.remove));
   });
 }
+RoomPlaylist.onChange = ()=>{
+  renderPlaylistList('video', 'playlist-video-list-inline');
+  renderPlaylistList('music', 'playlist-music-list-inline');
+};
+
 
 function renderTalkGrid(){
   const grid = document.getElementById('talk-grid');
@@ -456,19 +487,7 @@ document.getElementById('btn-seek-video').addEventListener('click', ()=>{
   if (!YTSync.seek('video', document.getElementById('input-seek-video').value)) toast('Enter a time like 1:23 or a number of seconds');
 });
 document.getElementById('input-seek-video').addEventListener('keydown', e=>{ if(e.key==='Enter') document.getElementById('btn-seek-video').click(); });
-document.getElementById('btn-fullscreen').addEventListener('click', async ()=>{
-  const frame = document.querySelector('#pane-video .video-frame');
-  if (document.fullscreenElement){
-    if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock();
-    document.exitFullscreen();
-  } else {
-    try{
-      if (frame.requestFullscreen) await frame.requestFullscreen();
-      else if (frame.webkitRequestFullscreen) frame.webkitRequestFullscreen();
-      if (screen.orientation && screen.orientation.lock) await screen.orientation.lock('landscape').catch(()=>{});
-    }catch(err){ console.warn('Fullscreen/rotation error:', err); }
-  }
-});
+document.getElementById('btn-fullscreen').addEventListener('click', ()=> Cinema.toggle());
 
 document.getElementById('btn-play-music').addEventListener('click', ()=>YTSync.play('music'));
 document.getElementById('btn-pause-music').addEventListener('click', ()=>YTSync.pause('music'));
@@ -617,11 +636,13 @@ function spawnFloatingReaction(pane, emoji){
   setTimeout(()=> bubble.remove(), 2600);
 }
 function sendReaction(emoji){
+  if (!REACTION_EMOJIS.includes(emoji)) return;
   const pane = (currentMode === 'music') ? 'music' : 'video';
   spawnFloatingReaction(pane, emoji);
   broadcast({ type:'reaction', emoji });
 }
 registerHandler('reaction', (fromId, data)=>{
+  if (!REACTION_EMOJIS.includes(data.emoji)) return;   // only the emojis we offer (nothing arbitrary from the network)
   // Shows wherever the receiver is currently looking, if that's Watch or Music —
   // otherwise there's no visible spot for it right now, so it's just skipped.
   if (currentMode === 'video' || currentMode === 'music'){
@@ -650,7 +671,10 @@ function playChime(){
 
 function openSettings(){
   document.getElementById('settings-overlay').style.display='flex';
-  document.getElementById('settings-account-desc').textContent = `${myProfile.first_name} ${myProfile.last_name} · @${myProfile.username}`;
+  document.getElementById('settings-account-desc').textContent = isGuest()
+    ? `Guest · ${myName}`
+    : `${myProfile.first_name} ${myProfile.last_name} · @${myProfile.username}`;
+  document.getElementById('btn-settings-logout').textContent = isGuest() ? 'Sign up or log in' : 'Log out';
   populateMicSelect();
 }
 document.getElementById('btn-settings-close').addEventListener('click', ()=>{ document.getElementById('settings-overlay').style.display='none'; });
@@ -660,6 +684,7 @@ document.getElementById('btn-rename-save').addEventListener('click', ()=>{
   const newName = document.getElementById('input-rename').value.trim();
   if (!newName || newName===myName) return;
   myName = newName;
+  if (isGuest()) setGuestName(newName);
   participants[myId].name = myName;
   renderOrbit();
   broadcast({type:'rename', name:myName});
@@ -698,6 +723,7 @@ document.getElementById('select-mic').addEventListener('change', async function(
 
 // ---------- Account (Supabase Auth) ----------
 document.getElementById('btn-settings-logout').addEventListener('click', async ()=>{
+  if (isGuest()){ upgradeFromGuest('signup'); return; }
   await signOutUser();
   location.reload();
 });
@@ -712,7 +738,7 @@ window.onAuthChange = function(user){
 
 // ---------- Auth: sign up / log in ----------
 function setAuthTab(tab){
-  const panels = { login:'auth-login', signup:'auth-signup', forgot:'auth-forgot', reset:'auth-reset' };
+  const panels = { login:'auth-login', signup:'auth-signup', forgot:'auth-forgot', reset:'auth-reset', guest:'auth-guest' };
   Object.entries(panels).forEach(([name, id])=>{
     const el = document.getElementById(id);
     if (el) el.style.display = (name === tab) ? 'block' : 'none';
@@ -722,6 +748,10 @@ function setAuthTab(tab){
   if (tabs) tabs.style.display = (tab === 'login' || tab === 'signup') ? '' : 'none';
   const status = document.getElementById('auth-status');
   if (status) status.textContent = '';
+  if (tab === 'guest'){                                       // remember the last guest nickname on this device
+    const field = document.getElementById('guest-name');
+    if (field && !field.value){ try{ field.value = localStorage.getItem('together_guest_name') || ''; }catch(e){} }
+  }
 }
 document.querySelectorAll('.auth-tab').forEach(btn => btn.addEventListener('click', ()=> setAuthTab(btn.dataset.tab)));
 
@@ -937,34 +967,96 @@ document.getElementById('btn-forgot-back').addEventListener('click', ()=> setAut
 document.getElementById('btn-forgot-send').addEventListener('click', handleForgot);
 document.getElementById('btn-reset-save').addEventListener('click', handleResetSave);
 
+// ---------- Guest access ----------
+function defaultAuthTab(){
+  let known = false;
+  try{ known = localStorage.getItem('together_has_account') === '1'; }catch(e){}
+  return known ? 'login' : 'signup';
+}
+async function handleGuestContinue(){
+  const btn = document.getElementById('btn-guest-go');
+  const name = document.getElementById('guest-name').value.trim().replace(/\s+/g, ' ');
+  if (name.length < 2){ showAuthStatus('Your nickname needs at least 2 characters.', true); return; }
+  btn.disabled = true;
+  try{
+    showAuthStatus('One moment…');
+    // A member's nickname is theirs — guests can't pose as them (skipped if the check isn't installed)
+    if (await checkUsernameAvailable(name) === false){
+      showAuthStatus('That nickname belongs to a member. Log in to use it, or pick another.', true);
+      return;
+    }
+    try{ localStorage.setItem('together_guest_name', name); }catch(e){}
+    showAuthStatus('');
+    await enterAppAsGuest(name);
+  }finally{
+    btn.disabled = false;
+  }
+}
+// Guest -> member without losing their place: leave the room tidily and reload. The room is
+// remembered for this tab, so after signing up / logging in they're put straight back in it.
+function upgradeFromGuest(tab){
+  try{
+    sessionStorage.removeItem(GUEST_KEY);
+    sessionStorage.setItem('together_next_tab', tab);
+  }catch(e){}
+  try{ leaveRoomPresence(); if (peer) peer.destroy(); }catch(e){}
+  location.reload();
+}
+['btn-guest-link-login', 'btn-guest-link-signup'].forEach(id=>{
+  const b = document.getElementById(id);
+  if (b) b.addEventListener('click', ()=> setAuthTab('guest'));
+});
+document.getElementById('btn-guest-back').addEventListener('click', ()=> setAuthTab(defaultAuthTab()));
+document.getElementById('btn-guest-go').addEventListener('click', handleGuestContinue);
+
+// ---------- "You need an account for that" prompt ----------
+let accountPromptOpener = null;
+function openAccountPrompt(){
+  const overlay = document.getElementById('account-prompt-overlay');
+  accountPromptOpener = document.activeElement;
+  overlay.style.display = 'flex';
+  document.getElementById('btn-prompt-signup').focus();
+}
+function closeAccountPrompt(){
+  document.getElementById('account-prompt-overlay').style.display = 'none';
+  if (accountPromptOpener && accountPromptOpener.focus) accountPromptOpener.focus();
+}
+// Call before anything that needs storing. Returns true for members; for guests it shows the
+// prompt and returns false. e.g.  if (!requireAccount('save rooms')) return;
+function requireAccount(what){
+  if (!isGuest()) return true;
+  document.getElementById('account-prompt-text').textContent =
+    `Create a free account to ${what}. You can keep using Together as a guest for everything else.`;
+  openAccountPrompt();
+  return false;
+}
+document.getElementById('btn-prompt-signup').addEventListener('click', ()=> upgradeFromGuest('signup'));
+document.getElementById('btn-prompt-login').addEventListener('click', ()=> upgradeFromGuest('login'));
+document.getElementById('btn-prompt-close').addEventListener('click', closeAccountPrompt);
+document.getElementById('account-prompt-overlay').addEventListener('click', e=>{ if (e.target.id === 'account-prompt-overlay') closeAccountPrompt(); });
+document.addEventListener('keydown', e=>{
+  if (e.key === 'Escape' && document.getElementById('account-prompt-overlay').style.display === 'flex') closeAccountPrompt();
+});
+
 document.getElementById('btn-signup').addEventListener('click', e=>{ e.preventDefault(); handleSignup(); });
 document.getElementById('btn-login').addEventListener('click', e=>{ e.preventDefault(); handleLogin(); });
 // Enter submits (these aren't <form>s)
 [['login-email','btn-login'],['login-password','btn-login'],
  ['signup-first','btn-signup'],['signup-last','btn-signup'],['signup-username','btn-signup'],
  ['signup-email','btn-signup'],['signup-password','btn-signup'],
- ['forgot-email','btn-forgot-send'],['reset-password','btn-reset-save'],['reset-password2','btn-reset-save']].forEach(([input, button])=>{
+ ['guest-name','btn-guest-go'],['forgot-email','btn-forgot-send'],['reset-password','btn-reset-save'],['reset-password2','btn-reset-save']].forEach(([input, button])=>{
   document.getElementById(input).addEventListener('keydown', e=>{ if (e.key === 'Enter'){ e.preventDefault(); document.getElementById(button).click(); } });
 });
 
-// ---------- Save to playlist ----------
-document.getElementById('btn-save-video').addEventListener('click', ()=>{
-  const c = YTChannels.video;
-  if (!c.currentId){ toast('Load a video first'); return; }
-  const title = document.getElementById('input-video-url').value.trim() || c.currentId;
-  saveFavorite('video', title, c.currentId);
-});
-document.getElementById('btn-save-music').addEventListener('click', ()=>{
-  const c = YTChannels.music;
-  if (!c.currentId){ toast('Load a track first'); return; }
-  const title = document.getElementById('input-music-url').value.trim() || c.currentId;
-  saveFavorite('music', title, c.currentId);
-});
+// ---------- Save to the room's playlist ----------
+document.getElementById('btn-save-video').addEventListener('click', ()=> rpSave('video'));
+document.getElementById('btn-save-music').addEventListener('click', ()=> rpSave('music'));
 
 // Log out from the landing and saved-rooms screens. Reloading resets everything tied to the
 // old account (presence, rooms, profile) so the next person to log in starts clean.
 async function logoutAndReload(){
   await signOutUser();
+  setGuestName(null);
   clearSession();
   location.reload();
 }

@@ -62,6 +62,11 @@ if (typeof window.onAuthChange === 'function') window.onAuthChange(currentUser);
   console.error('Supabase failed to initialize:', e);
 }
 
+// A guest is simply someone who isn't signed in. Nothing is ever written to the database for
+// them — that is what "restricted" means here (no saved playlists, chat history or rooms).
+function isGuest() { return !currentUser; }
+window.isGuest = isGuest;
+
 async function restoreAuthSession() {
   if (!supabaseClient) return null;
   try {

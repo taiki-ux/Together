@@ -188,17 +188,33 @@ const ignoredPeers = new Set();
 let presenceReady = false;      // false until the first presence snapshot is processed; later arrivals are "live"
 
 function myUserId(){ return (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null; }
+// Guests have no account id, so each tab gets a random key (kept across reloads of that tab).
+// That lets a guest's reload-ghost be recognised as "me" instead of showing twice.
+function myGuestKey(){
+  if (myUserId()) return null;
+  try{
+    let k = sessionStorage.getItem('together_guest_id');
+    if (!k){ k = Math.random().toString(36).slice(2, 12); sessionStorage.setItem('together_guest_id', k); }
+    return k;
+  }catch(e){ return null; }
+}
+function myIdentity(){ const u = myUserId(); if (u) return u; const g = myGuestKey(); return g ? 'guest:' + g : null; }
+function entryIdentity(entry){
+  if (entry.userId) return entry.userId;
+  return isSafeId(entry.guestKey) ? 'guest:' + entry.guestKey : null;
+}
 
 function acceptPresenceEntry(entry, isLive){
   const id = entry && entry.peerId;
   if (!isSafeId(id) || id === myId || ignoredPeers.has(id)) return false;
   const uid = entry.userId || null;
-  if (uid){
-    if (uid === myUserId()){
+  const identity = entryIdentity(entry);
+  if (identity){
+    if (identity === myIdentity()){
       if (isLive) yieldToNewerSession(); else ignoredPeers.add(id);
       return false;
     }
-    const olderId = Object.keys(participants).find(pid => pid !== id && pid !== myId && participants[pid].userId === uid);
+    const olderId = Object.keys(participants).find(pid => pid !== id && pid !== myId && participants[pid].identity === identity);
     if (olderId){
       if (isLive || (entry.joinedAt || 0) >= (participants[olderId].joinedAt || 0)){
         ignoredPeers.add(olderId);
@@ -209,7 +225,7 @@ function acceptPresenceEntry(entry, isLive){
       }
     }
   }
-  participants[id] = { ...(participants[id] || {}), name: String(entry.name || 'Someone').slice(0, 40), userId: uid, joinedAt: entry.joinedAt || 0 };
+  participants[id] = { ...(participants[id] || {}), name: String(entry.name || 'Someone').slice(0, 40), userId: uid, identity, joinedAt: entry.joinedAt || 0 };
   return true;
 }
 
@@ -263,7 +279,7 @@ function joinRoomPresence(){
       if (window.onKnockReceived) window.onKnockReceived(payload);
     })
     .subscribe(async (status)=>{
-      if (status === 'SUBSCRIBED') await roomChannel.track({ peerId: myId, name: myName, userId: myUserId(), joinedAt });
+      if (status === 'SUBSCRIBED') await roomChannel.track({ peerId: myId, name: myName, userId: myUserId(), guestKey: myGuestKey(), joinedAt });
     });
 }
 function leaveRoomPresence(){

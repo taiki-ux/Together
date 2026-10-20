@@ -121,20 +121,27 @@ function maybeSkipFromVotes(ch, trackId){
 }
 
 // ---------- Remote sync ----------
+// Tracks come from other peers — check their shape before they reach the DOM or the player.
+function isValidTrack(t){
+  return !!t && isSafeId(t.id) && isValidVideoId(t.videoId)
+    && typeof t.title === 'string' && typeof t.addedBy === 'string';
+}
 registerHandler('queue', (fromId, data)=>{
+  if (data.channel !== 'video' && data.channel !== 'music') return; // never index by an arbitrary remote key
   const q = MediaQueues[data.channel];
   if (!q) return;
   if (data.action === 'add'){
-    if (!q.items.find(t=> t.id===data.track.id)) q.items.push(data.track);
+    if (isValidTrack(data.track) && !q.items.find(t=> t.id===data.track.id)) q.items.push(data.track);
     renderQueueUI(data.channel);
   } else if (data.action === 'vote'){
-    if (!q.votes[data.trackId]) q.votes[data.trackId] = {};
+    if (!isSafeId(data.trackId) || !isSafeId(data.peerId)) return;
+    if (!Object.hasOwn(q.votes, data.trackId)) q.votes[data.trackId] = {};
     q.votes[data.trackId][data.peerId] = data.choice;
     renderQueueUI(data.channel);
   } else if (data.action === 'sync'){
-    q.items = data.items || [];
-    q.votes = data.votes || {};
-    q.history = data.history || [];
+    q.items = Array.isArray(data.items) ? data.items.filter(isValidTrack) : [];
+    q.votes = (data.votes && typeof data.votes === 'object') ? data.votes : {};
+    q.history = Array.isArray(data.history) ? data.history.filter(isValidTrack) : [];
     q.shuffle = !!data.shuffle;
     q.repeat = data.repeat || 'off';
     renderQueueUI(data.channel);
@@ -187,21 +194,31 @@ function renderQueueUI(ch){
         const upCount = Object.values(votes).filter(v=>v==='up').length;
         const downCount = Object.values(votes).filter(v=>v==='down').length;
         const myVote = votes[myId];
+        const fav = isFavourite(ch, t.videoId);
         return `
           <div class="queue-item ${i===0?'now-playing':''}">
             <div class="queue-item-info">
               <div class="title">${i===0?'▶ ':''}${escapeHtml(t.title)}</div>
-              <div class="added-by">added by ${escapeHtml(t.addedBy)}</div>
+              <div class="queue-item-meta">
+                <span class="added-by">added by ${escapeHtml(t.addedBy)}</span>
+                <button class="fav-btn ${fav?'on':''}" data-fav-ch="${ch}" data-fav-video="${escapeHtml(t.videoId)}" type="button" aria-pressed="${fav}" aria-label="${fav ? 'Remove from favourites' : 'Add to favourites'}" title="${fav ? 'Remove from favourites' : 'Add to favourites'}">${fav ? '❤️' : '🤍'}</button>
+              </div>
             </div>
             <div class="queue-votes">
-              <button class="vote-btn ${myVote==='up'?'voted':''}" data-vote-ch="${ch}" data-vote-track="${t.id}" data-vote-choice="up" type="button">👍 ${upCount}</button>
-              <button class="vote-btn ${myVote==='down'?'voted':''}" data-vote-ch="${ch}" data-vote-track="${t.id}" data-vote-choice="down" type="button">👎 ${downCount}</button>
+              <button class="vote-btn ${myVote==='up'?'voted':''}" data-vote-ch="${ch}" data-vote-track="${escapeHtml(t.id)}" data-vote-choice="up" type="button">👍 ${upCount}</button>
+              <button class="vote-btn ${myVote==='down'?'voted':''}" data-vote-ch="${ch}" data-vote-track="${escapeHtml(t.id)}" data-vote-choice="down" type="button">👎 ${downCount}</button>
             </div>
           </div>
         `;
       }).join('');
       el.querySelectorAll('[data-vote-track]').forEach(btn=>{
         btn.addEventListener('click', ()=> voteOnTrack(btn.dataset.voteCh, btn.dataset.voteTrack, btn.dataset.voteChoice));
+      });
+      el.querySelectorAll('[data-fav-video]').forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          const track = q.items.find(x => x.videoId === btn.dataset.favVideo);
+          toggleFavourite(btn.dataset.favCh, btn.dataset.favVideo, track ? track.title : '');
+        });
       });
     }
   }
@@ -216,6 +233,11 @@ function updateQueueControlsUI(ch){
   const repeatBtn = document.getElementById('btn-queue-repeat-'+ch);
   if (prevBtn) prevBtn.disabled = q.history.length === 0;
   if (nextBtn) nextBtn.disabled = q.items.length === 0;
+  if (ch === 'video'){                               // the full-screen rail's buttons mirror these
+    const fsPrev = document.getElementById('fs-prev'), fsNext = document.getElementById('fs-next');
+    if (fsPrev) fsPrev.disabled = q.history.length === 0;
+    if (fsNext) fsNext.disabled = q.items.length === 0;
+  }
   if (shuffleBtn) shuffleBtn.classList.toggle('on', q.shuffle);
   if (repeatBtn){
     repeatBtn.classList.toggle('on', q.repeat !== 'off');
@@ -264,3 +286,6 @@ function updateQueueControlsUI(ch){
 
   renderQueueUI(ch);
 });
+
+// Hearts redraw whenever favourites change (added, removed, or loaded after entering a room)
+Favourites.onChange = ()=>{ renderQueueUI('video'); renderQueueUI('music'); };
