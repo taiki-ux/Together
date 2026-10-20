@@ -4,7 +4,7 @@
    peer-manager.js (which still owns localStream/mediaConns/
    audioEls/acquireMicStream/attachSpeakingDetector):
 
-   - Auto-join voice on room entry (togglable in Settings)
+   - Microphone only held while you're unmuted (keeps phones out of "call mode")
    - Per-person local volume + local-only mute (Talk pane tiles)
    - Deafen (mute your ears AND your mic in one tap)
    - Push-to-talk (hold the mic button instead of toggling it)
@@ -16,7 +16,6 @@
    ============================================================ */
 
 // ---------- State ----------
-window.autoJoinVoiceOn = true;
 let pushToTalkOn = false;
 let deafened = false;
 const localVolumes = {};        // peerId -> 0-100 (defaults to 100)
@@ -40,15 +39,72 @@ function toggleLocalMute(peerId){
   renderTalkGrid(); // cheapest way to refresh that one button's icon
 }
 
+// ---------- Microphone lifecycle ----------
+// An open microphone puts a phone into "call mode": everything else it plays gets quieter and
+// tinny and may be routed to the earpiece. That is the "sounds like a phone call" effect people
+// heard on the room's music. So the mic is held ONLY while you're unmuted (or holding
+// push-to-talk) and released a few seconds after you mute. Hearing everyone needs no mic at all.
+const MIC_RELEASE_AFTER_MS = 6000;     // a quick mute/unmute stays instant; longer than this returns the phone to normal audio
+let micReleaseTimer = null;
+let selectedMicId = null;
+let micChain = Promise.resolve();      // makes rapid taps / push-to-talk presses apply strictly in order
+
+function micStreamLive(){ return !!localStream && localStream.getAudioTracks().some(t=> t.readyState === 'live'); }
+
+// Put the current mic track on every voice call: swap it in where we already send audio,
+// start a fresh call where we had only been listening.
+function sendMicToPeers(){
+  const track = localStream && localStream.getAudioTracks()[0];
+  if (!track) return;
+  Object.keys(dataConns).forEach(id=>{
+    const call = mediaConns[id];
+    if (!call){ maybeCallPeer(id); return; }
+    if (call._sendsAudio && call.peerConnection){
+      const sender = call.peerConnection.getSenders().find(s=> !s.track || s.track.kind === 'audio');
+      if (sender){ sender.replaceTrack(track).catch(()=>{}); return; }
+    }
+    try{ call.close(); }catch(e){}
+    delete mediaConns[id];
+    maybeCallPeer(id);
+  });
+}
+
+async function applyMicEnabled(on){
+  if (on){
+    clearTimeout(micReleaseTimer);
+    if (!micStreamLive()){
+      localStream = await acquireMicStream(selectedMicId || undefined);
+      attachSpeakingDetector(localStream, myId);
+    }
+    localStream.getAudioTracks().forEach(t=> t.enabled = true);
+    micOn = true;
+    sendMicToPeers();
+    updateMicButtonsUI(true);
+    broadcast({ type:'mic', muted:false });
+  } else {
+    micOn = false;
+    if (localStream) localStream.getAudioTracks().forEach(t=> t.enabled = false);
+    updateMicButtonsUI(false);
+    broadcast({ type:'mic', muted:true });
+    clearTimeout(micReleaseTimer);
+    micReleaseTimer = setTimeout(releaseMicStream, MIC_RELEASE_AFTER_MS);
+  }
+}
+function setMicEnabled(on){
+  const run = micChain.then(()=> applyMicEnabled(on));
+  micChain = run.catch(()=>{});
+  return run;
+}
+function releaseMicStream(){
+  if (micOn || !localStream) return;
+  localStream.getTracks().forEach(t=> t.stop());
+  localStream = null;
+}
+
 // ---------- Deafen ----------
 function toggleDeafen(){
   deafened = !deafened;
-  if (deafened && micOn){
-    micOn = false;
-    if (localStream) localStream.getAudioTracks().forEach(t=> t.enabled=false);
-    updateMicButtonsUI(false);
-    broadcast({ type:'mic', muted:true });
-  }
+  if (deafened && micOn) setMicEnabled(false);
   Object.keys(audioEls).forEach(peerId=> applyAudioSettings(peerId));
   updateDeafenButtonsUI();
 }
@@ -63,46 +119,22 @@ function updateDeafenButtonsUI(){
 }
 document.getElementById('btn-deafen-talk')?.addEventListener('click', toggleDeafen);
 
-// ---------- Auto-join on room entry ----------
-// Joins voice MUTED: you can hear everyone straight away, and nobody hears you until
-// you press Unmute (or hold the button in push-to-talk). The mic stream is acquired up
-// front so the permission prompt happens once and unmuting is instant.
-async function autoJoinVoiceIfEnabled(){
-  if (!window.autoJoinVoiceOn || localStream) return;
-  try{
-    localStream = await acquireMicStream();
-    attachSpeakingDetector(localStream, myId);
-    localStream.getAudioTracks().forEach(t=> t.enabled = false);
-    Object.keys(dataConns).forEach(id=> maybeCallPeer(id));
-    updateMicButtonsUI(false);
-  }catch(e){ console.warn('Auto-join voice skipped:', e.message || e); }
-}
-
 // ---------- Push-to-talk ----------
 function setupPushToTalkButton(id){
   const btn = document.getElementById(id);
   if (!btn) return;
+  let held = false;
   const pressStart = async (e)=>{
     if (!pushToTalkOn) return;
     e.preventDefault();
-    if (!localStream){
-      try{
-        localStream = await acquireMicStream();
-        attachSpeakingDetector(localStream, myId);
-        Object.keys(dataConns).forEach(pid=> maybeCallPeer(pid));
-      }catch(err){ toast("Couldn't access your microphone", 'err'); return; }
-    }
-    micOn = true;
-    localStream.getAudioTracks().forEach(t=> t.enabled = true);
-    updateMicButtonsUI(true);
-    broadcast({ type:'mic', muted:false });
+    held = true;
+    try{ await setMicEnabled(true); }
+    catch(err){ held = false; toast("Couldn't access your microphone", 'err'); }
   };
   const pressEnd = ()=>{
-    if (!pushToTalkOn || !localStream) return;
-    micOn = false;
-    localStream.getAudioTracks().forEach(t=> t.enabled = false);
-    updateMicButtonsUI(false);
-    broadcast({ type:'mic', muted:true });
+    if (!pushToTalkOn || !held) return;
+    held = false;
+    setMicEnabled(false);
   };
   btn.addEventListener('mousedown', pressStart);
   btn.addEventListener('touchstart', pressStart, { passive:false });
@@ -115,17 +147,8 @@ setupPushToTalkButton('btn-mic-talk');
 document.getElementById('toggle-push-to-talk')?.addEventListener('click', function(){
   pushToTalkOn = !pushToTalkOn;
   this.classList.toggle('on', pushToTalkOn);
-  if (pushToTalkOn && micOn){
-    // Switching into PTT mid-call — go silent until they hold the button.
-    micOn = false;
-    if (localStream) localStream.getAudioTracks().forEach(t=> t.enabled=false);
-    broadcast({ type:'mic', muted:true });
-  }
+  if (pushToTalkOn && micOn) setMicEnabled(false);   // switching into PTT mid-call — go silent until they hold the button
   updateMicButtonsUI(micOn);
-});
-document.getElementById('toggle-autojoin-voice')?.addEventListener('click', function(){
-  window.autoJoinVoiceOn = !window.autoJoinVoiceOn;
-  this.classList.toggle('on', window.autoJoinVoiceOn);
 });
 
 // ---------- Talk-tile voice controls (quality dot + local mute + volume) ----------

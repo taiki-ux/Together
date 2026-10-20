@@ -113,6 +113,84 @@ input[type=text]:focus,input[type=password]:focus{
   box-shadow: 0 0 20px rgba(255,111,145,0.4);
 }
 
+/* ================= SPLASH ================= */
+#screen-splash{
+  position:fixed; inset:0; z-index:100;
+  background:radial-gradient(ellipse at center, #171226 0%, #0b0f1a 70%);
+  display:flex; align-items:center; justify-content:center; flex-direction:column;
+  overflow:hidden;
+}
+
+.splash-particle{ 
+  position:absolute; border-radius:50%; filter:blur(1px); 
+  animation:drift 8s ease-in-out infinite; opacity:0.5;
+}
+
+@keyframes drift{ 
+  0%,100%{ transform:translateY(0) translateX(0); } 
+  50%{ transform:translateY(-30px) translateX(15px); } 
+}
+
+.splash-ring{ 
+  position:absolute; width:420px; height:420px; border-radius:50%; 
+  border:1px solid rgba(255,111,145,0.25);
+  animation:spin 18s linear infinite;
+  box-shadow: 0 0 40px rgba(255,111,145,0.15);
+}
+
+.splash-ring.r2{ 
+  width:560px; height:560px; border-color:rgba(94,230,208,0.2); 
+  animation-duration:26s; animation-direction:reverse;
+  box-shadow: 0 0 40px rgba(94,230,208,0.15);
+}
+
+@keyframes spin{ 
+  from{transform:rotate(0deg);} 
+  to{transform:rotate(360deg);} 
+}
+
+.splash-content{ 
+  position:relative; text-align:center; opacity:0; 
+  animation:splashIn 1.1s ease-out 0.15s forwards;
+}
+
+@keyframes splashIn{ 
+  from{ 
+    opacity:0; 
+    transform:scale(0.9) translateY(10px); 
+    letter-spacing:0.3em; 
+  } 
+  to{ 
+    opacity:1; 
+    transform:scale(1) translateY(0); 
+    letter-spacing:normal; 
+  } 
+}
+
+.splash-title{
+  font-family:'Fraunces',serif; font-style:italic; font-weight:600; 
+  font-size:clamp(48px,10vw,88px);
+  background:linear-gradient(120deg, var(--coral), var(--gold) 50%, var(--teal));
+  -webkit-background-clip:text; background-clip:text; color:transparent; 
+  margin:0; line-height:1;
+  filter:drop-shadow(0 0 50px rgba(255,111,145,0.35));
+  letter-spacing:0.02em;
+}
+
+.splash-sub{ 
+  margin-top:14px; font-size:13px; letter-spacing:0.18em; 
+  text-transform:uppercase; color:var(--text-muted); font-weight:600; 
+  opacity:0; animation:fadeUp 1s ease-out 1s forwards;
+}
+
+.splash-sub b{ 
+  color:var(--teal); font-weight:700; 
+}
+
+@keyframes fadeUp{ 
+  from{opacity:0; transform:translateY(8px);} 
+  to{opacity:1; transform:translateY(0);} 
+}
 
 /* ================= LANDING ================= */
 #screen-landing{ 
@@ -754,8 +832,9 @@ label{
   50%{height:24px;} 
 }
 
-.music-yt{ 
-  width:1px; height:1px; overflow:hidden; position:absolute; 
+.music-yt{
+  /* YouTube wants a player of at least 200x200, so it is kept that size but parked off-screen and invisible */
+  position:fixed; left:-400px; top:0; width:220px; height:220px; overflow:hidden;
   opacity:0; pointer-events:none;
 }
 
@@ -1880,3 +1959,34 @@ select:focus {
   color:var(--coral-ink); text-decoration:underline; text-underline-offset:3px;
 }
 .auth-link:focus-visible{ outline:2px solid var(--coral); outline-offset:2px; border-radius:4px; }
+
+/* ================= Music progress bar ================= */
+.music-progress{ flex-basis:100%; display:flex; align-items:center; gap:12px; position:relative; z-index:1; }
+.music-time{ font-size:12px; font-weight:600; font-variant-numeric:tabular-nums; color:var(--text-muted); min-width:44px; }
+.music-time:last-child{ text-align:right; }
+.music-seek{
+  --pct:0%; flex:1; min-width:0; height:28px; margin:0; padding:0; border:none; box-shadow:none;
+  background:transparent; -webkit-appearance:none; appearance:none; cursor:pointer;
+}
+.music-seek:disabled{ cursor:default; opacity:0.55; }
+.music-seek:focus-visible{ outline:2px solid var(--coral); outline-offset:2px; border-radius:6px; }
+.music-seek::-webkit-slider-runnable-track{
+  height:6px; border-radius:999px;
+  background:linear-gradient(90deg, var(--coral), var(--gold)) left center / var(--pct) 100% no-repeat, var(--line);
+}
+.music-seek::-webkit-slider-thumb{
+  -webkit-appearance:none; width:16px; height:16px; margin-top:-5px; border-radius:50%;
+  background:var(--text); border:2px solid var(--coral); box-shadow:0 0 0 4px rgba(255,111,145,0.15);
+}
+.music-seek::-moz-range-track{ height:6px; border-radius:999px; background:var(--line); }
+.music-seek::-moz-range-progress{ height:6px; border-radius:999px; background:linear-gradient(90deg, var(--coral), var(--gold)); }
+.music-seek::-moz-range-thumb{ width:12px; height:12px; border-radius:50%; background:var(--text); border:2px solid var(--coral); }
+
+/* ================= "Tap to join" (autoplay blocked on this device) ================= */
+.join-playback{
+  position:absolute; inset:0; z-index:20; display:flex; align-items:center; justify-content:center;
+  width:100%; border:none; cursor:pointer; padding:20px; text-align:center;
+  background:rgba(6,8,14,0.6); backdrop-filter:blur(2px); color:#fff; font-size:17px; font-weight:800;
+}
+.join-playback:focus-visible{ outline:3px solid var(--coral); outline-offset:-6px; }
+.join-playback-inline{ position:relative; z-index:1; align-self:flex-start; }

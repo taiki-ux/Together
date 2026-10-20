@@ -18,7 +18,15 @@
 </head>
 <body>
 
-
+<!-- ================= SPLASH (5s, no skip) ================= -->
+<div id="screen-splash">
+  <div class="splash-ring"></div>
+  <div class="splash-ring r2"></div>
+  <div class="splash-content">
+    <h1 class="splash-title">Together</h1>
+    <div class="splash-sub">enjoy · made by <b>Taiki Ryuzaki</b></div>
+  </div>
+</div>
 
 <!-- ================= LANDING ================= -->
 <!-- ================= AUTH (sign up / log in) ================= -->
@@ -215,6 +223,7 @@
              <div>Search or paste a YouTube link below to start the night</div>
            </div>
            <div class="reaction-layer" id="reaction-layer-video"></div>
+           <button class="join-playback" id="join-playback-video" type="button" style="display:none;">▶ Tap to join playback</button>
          </div>
          <div class="reaction-bar">
            <button class="reaction-btn" data-emoji="😂" type="button">😂</button>
@@ -280,7 +289,13 @@
               <h3 id="music-title">Nothing queued yet</h3>
               <div class="bars" id="music-bars"><i></i><i></i><i></i><i></i><i></i><i></i></div>
             </div>
-            <div class="music-yt" id="yt-player-music"></div>
+            <div class="music-progress">
+              <span class="music-time" id="music-time-elapsed">0:00</span>
+              <input type="range" class="music-seek" id="music-seek" min="0" max="1000" step="1" value="0" disabled aria-label="Song position">
+              <span class="music-time" id="music-time-remaining">-0:00</span>
+            </div>
+            <button class="btn btn-primary btn-sm join-playback-inline" id="join-playback-music" type="button" style="display:none;">🔊 Tap to start the music</button>
+            <div class="music-yt" id="yt-player-music" aria-hidden="true"></div>
           </div>
 
          <div class="reaction-bar">
@@ -500,7 +515,7 @@
           <div class="talk-grid" id="talk-grid"></div>
           <div class="talk-controls-row">
             <div class="talk-actions">
-  <button class="talk-mic-btn" id="btn-mic-talk" type="button">🎤 Join voice</button>
+  <button class="talk-mic-btn" id="btn-mic-talk" type="button">🎤 Unmute</button>
   <button class="talk-mic-btn talk-cam-btn" id="btn-cam-talk" type="button">📷 Start camera</button>
 </div>
             <button class="icon-btn talk-deafen-btn" id="btn-deafen-talk" type="button" title="Deafen">🔊</button>
@@ -580,10 +595,6 @@
     <div class="settings-row">
       <div><div class="lbl">Auto-sync</div><div class="desc">Automatically correct drift for video &amp; music</div></div>
       <div class="toggle on" id="toggle-autosync"></div>
-    </div>
-    <div class="settings-row">
-      <div><div class="lbl">Auto-join voice</div><div class="desc">Join voice muted when you enter a room — unmute when you want to talk</div></div>
-      <div class="toggle on" id="toggle-autojoin-voice"></div>
     </div>
     <div class="settings-row">
       <div><div class="lbl">Push-to-talk</div><div class="desc">Hold the mic button to talk, instead of toggling it on/off</div></div>

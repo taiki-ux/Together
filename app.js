@@ -57,6 +57,41 @@ function showPendingNotice(){
 // holds until the saved login is checked), so refreshing feels like a refresh, not a restart.
 let pendingRestoreView = null;   // where to put the person back once they're re-connected to their room
 let appEntered = false;          // guards against entering the app twice (login event + explicit call)
+(function(){
+  const colors = ['#ff6f91','#ffd166','#5ee6d0','#a78bfa'];
+  const splash = document.getElementById('screen-splash');
+  for (let i=0;i<10;i++){
+    const p = document.createElement('div');
+    p.className='splash-particle';
+    const size = 3+Math.random()*5;
+    p.style.width=size+'px'; p.style.height=size+'px';
+    p.style.left = (Math.random()*100)+'%';
+    p.style.top = (Math.random()*100)+'%';
+    p.style.background = colors[i%colors.length];
+    p.style.animationDuration = (6+Math.random()*6)+'s';
+    p.style.animationDelay = (Math.random()*4)+'s';
+    splash.appendChild(p);
+  }
+  let returning = false;
+  try{ returning = sessionStorage.getItem('together_booted') === '1'; sessionStorage.setItem('together_booted', '1'); }catch(e){}
+  const authReady = restoreAuthSession();      // check the saved login while the splash plays
+  setTimeout(async ()=>{
+    const user = await authReady;
+    splash.style.transition = 'opacity ' + (returning ? '.2s' : '.5s') + ' ease';
+    splash.style.opacity = '0';
+    setTimeout(()=>{
+      splash.style.display = 'none';
+      if (window.__authLinkError){                      // expired / already-used reset link
+        showAuthScreen();
+        setAuthTab('forgot');
+        showAuthStatus('That reset link has expired or was already used. Enter your email to get a new one.', true);
+      } else if (window.__recoveryPending){ showResetScreen(); }
+      else if (user && myProfile) enterAppAsUser(); else showAuthScreen();
+      showPendingNotice();
+    }, returning ? 200 : 500);
+  }, returning ? 0 : 5000);
+})();
+
 
 // ---------- Screens ----------
 const ALL_SCREENS = ['screen-auth','screen-landing','screen-saved-rooms','screen-room','screen-profile'];
@@ -189,7 +224,6 @@ window.onPeerReady = async function(){
   document.getElementById('input-rename').value = myName;
   if (typeof loadChatHistory === 'function') await loadChatHistory();
   addSystemMessage(isHost ? `Room created. Share the code "${roomCode}" with your friends.` : `You joined "${roomCode}".`);
-  if (typeof autoJoinVoiceIfEnabled === 'function') autoJoinVoiceIfEnabled();
   if (typeof requestWakeLock === 'function') requestWakeLock();
   // After a reload: back to the page (and profile) they were on
   if (restore && restore.roomView === 'activity' && restore.mode) enterActivity(restore.mode, false);
@@ -404,6 +438,17 @@ window.onChannelLoading = (function(prev){
   };
 })(window.onChannelLoading);
 
+// ---------- "Tap to join" (this device's browser blocked autoplay) ----------
+const joinPlaybackBtns = { video: document.getElementById('join-playback-video'), music: document.getElementById('join-playback-music') };
+window.onChannelBlocked = (function(prev){
+  return function(ch, blocked){
+    if (prev) prev(ch, blocked);
+    const btn = joinPlaybackBtns[ch];
+    if (btn) btn.style.display = blocked ? '' : 'none';
+  };
+})(window.onChannelBlocked);
+Object.entries(joinPlaybackBtns).forEach(([ch, btn])=>{ if (btn) btn.addEventListener('click', ()=> YTSync.joinPlayback(ch)); });
+
 document.getElementById('btn-play-video').addEventListener('click', ()=>YTSync.play('video'));
 document.getElementById('btn-pause-video').addEventListener('click', ()=>YTSync.pause('video'));
 document.getElementById('btn-sync-video').addEventListener('click', ()=>YTSync.syncToMe('video'));
@@ -438,39 +483,24 @@ document.getElementById('input-local-file').addEventListener('change', function(
 });
 
 async function toggleMic(){
-     if (typeof pushToTalkOn !== 'undefined' && pushToTalkOn) return; // press/hold owns mic state in this mode
-     if (!micOn){
-         try{
-            if (!localStream){ localStream = await acquireMicStream(); attachSpeakingDetector(localStream, myId); }
-            localStream.getAudioTracks().forEach(t=> t.enabled = true);
-            micOn = true;
-            updateMicButtonsUI(true);
-            Object.keys(dataConns).forEach(id=> maybeCallPeer(id));
-            broadcast({ type:'mic', muted:false });
-           }catch(e){
-            console.error('Mic access failed:', e);
-            const reason = e.name === 'NotAllowedError' ? 'Microphone permission was denied.'
-                 : e.name === 'NotFoundError' ? 'No microphone was found on this device.'
-                 : `Couldn't access your microphone (${e.message || e.name || 'unknown error'}).`;
-            toast(reason, 'err');
-           }
-       } else {
-         micOn = false;
-         if (localStream) localStream.getAudioTracks().forEach(t=> t.enabled = false);
-         updateMicButtonsUI(false);
-         broadcast({ type:'mic', muted:true });
-       }
-} 
+  if (typeof pushToTalkOn !== 'undefined' && pushToTalkOn) return; // press/hold owns mic state in this mode
+  try{
+    await setMicEnabled(!micOn);
+  }catch(e){
+    console.error('Mic access failed:', e);
+    const reason = e.name === 'NotAllowedError' ? 'Microphone permission was denied.'
+      : e.name === 'NotFoundError' ? 'No microphone was found on this device.'
+      : `Couldn't access your microphone (${e.message || e.name || 'unknown error'}).`;
+    toast(reason, 'err');
+  }
+}
 
-// Label for the Talk page's mic button. Voice now joins muted, so "connected but muted"
-// is the normal resting state — hence Mute/Unmute rather than Join/Leave once connected.
+// Label for the Talk page's mic button. You're always listening; the mic only opens when you unmute.
 function updateMicButtonsUI(on){
   const ptt = (typeof pushToTalkOn !== 'undefined' && pushToTalkOn);
   const talkBtn = document.getElementById('btn-mic-talk');
   if (!talkBtn) return;
-  talkBtn.textContent = !localStream ? '🎤 Join voice'
-    : ptt ? (on ? '🎤 Talking…' : '🎤 Hold to talk')
-    : (on ? '🔇 Mute' : '🎤 Unmute');
+  talkBtn.textContent = ptt ? (on ? '🎤 Talking…' : '🎤 Hold to talk') : (on ? '🔇 Mute' : '🎤 Unmute');
   talkBtn.classList.toggle('on', on);
 }
 
@@ -654,19 +684,15 @@ async function populateMicSelect(){
 }
 document.getElementById('select-mic').addEventListener('change', async function(){
   const deviceId = this.value; if (!deviceId) return;
+  selectedMicId = deviceId;
+  if (!micStreamLive()) return;     // mic isn't open right now — the choice is used the next time you unmute
   try{
     const newStream = await acquireMicStream(deviceId);
-    if (localStream) localStream.getTracks().forEach(t=>t.stop());
+    localStream.getTracks().forEach(t=>t.stop());
     localStream = newStream;
     localStream.getAudioTracks().forEach(t=>t.enabled=micOn);
     attachSpeakingDetector(localStream, myId);
-    const newTrack = localStream.getAudioTracks()[0];
-    Object.values(mediaConns).forEach(call=>{
-      const pc = call.peerConnection;
-      if (!pc) return;
-      const sender = pc.getSenders().find(s=>s.track && s.track.kind==='audio');
-      if (sender) sender.replaceTrack(newTrack);
-    });
+    sendMicToPeers();
   }catch(e){ alert("Couldn't switch microphone."); console.error('Microphone switch error:', e); }
 });
 
@@ -683,21 +709,6 @@ window.onAuthChange = function(user){
     location.reload();
   }
 };
-//--------------App boot ----------------
-(async function bootApp(){
-        try{
-          const user = await
-restoreAuthSession();
-           if (user && myProfile){
-                  enterAppAsUser();
-           } else {
-                 showAuthScreen();
-           }
-        }catch(err){
-               console.error('Failed to restore auth session:', err);
-               showAuthScreen();
-        }
-})();
 
 // ---------- Auth: sign up / log in ----------
 function setAuthTab(tab){

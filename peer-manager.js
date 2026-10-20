@@ -103,6 +103,7 @@ function initPeer(){
             return;
          }
          call.answer(localStream || undefined);
+         call._sendsAudio = !!localStream;   // remembered so unmuting later knows whether it can just swap in the mic
          setupMediaConn(call);
    });
    
@@ -366,7 +367,10 @@ function setupMediaConn(call){
 
 function maybeCallPeer(peerId){
   if (!localStream || mediaConns[peerId]) return;
-  setupMediaConn(peer.call(peerId, localStream));
+  const call = peer.call(peerId, localStream);
+  if (!call) return;
+  call._sendsAudio = true;
+  setupMediaConn(call);
 }
 
 function sendData(conn, obj){
@@ -428,6 +432,7 @@ function attachSpeakingDetector(stream, key){
     src.connect(analyser);
     const buf = new Uint8Array(analyser.frequencyBinCount);
     (function tick(){
+      if (stream.getTracks().every(t=> t.readyState === 'ended')){ speakingState[key] = false; ctx.close().catch(()=>{}); return; }
       analyser.getByteFrequencyData(buf);
       let sum=0; for (let i=0;i<buf.length;i++) sum+=buf[i];
       const speaking = (sum/buf.length) > 14;

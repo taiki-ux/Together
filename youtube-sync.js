@@ -1,28 +1,21 @@
 /* ============================================================
-   YOUTUBE-SYNC.JS
-   Room Playback State model (Phase 0 rebuild).
+   YOUTUBE-SYNC.js
+   Room Playback State for the Watch and Music channels.
 
-   Each channel (video/music) keeps ONE authoritative state —
-   { currentId, playing, position, lastUpdated, controller } —
-   instead of broadcasting individual play/pause/seek/heartbeat
-   messages and hoping everyone converges on the same thing.
+   Each channel keeps ONE shared state — { currentId, playing, position, rev, controller }.
+   Whoever takes a playback action (Play, Pause, Seek, loading something) bumps `rev` and becomes
+   the controller; everyone applies an update only if it is newer.
 
-   Whoever last took a playback action (pressed Play, Pause,
-   Seek, loaded something new) becomes that channel's controller
-   and stamps the update with lastUpdated = Date.now(). Peers
-   only apply an incoming update if it's newer than the one they
-   already have. That single rule is what stops two people's
-   Play/Pause from fighting each other forever — the room always
-   converges on whichever action actually happened last, instead
-   of both sides re-broadcasting in response to one another.
+   Why a counter and not a clock: the old version stamped updates with each phone's own
+   Date.now(). Two phones a few seconds apart made one of them ignore the other's updates
+   forever ("I press play and my friend's video never starts"). `rev` needs no clock; if two
+   people act at the same instant the higher controller id wins, identically on every device.
+   Playback position is estimated from the moment an update ARRIVED, again without clocks.
 
-   Only the current controller sends the periodic drift-correction
-   heartbeat (and only while actually playing) — not everyone
-   whose local player happens to be playing — which also cuts
-   down on unnecessary network chatter in bigger rooms.
-
-   Local YT.Player instances are NOT the synced state — they're
-   just kept in step with it.
+   The YouTube player is NOT the source of truth — it is kept in step with the state. The
+   player also reports its own changes (loading, autoplay blocked, the OS pausing media in
+   the background). Those reports are only treated as a person's action when we haven't just
+   told the player to do something, so a blocked autoplay can never pause the whole room.
    ============================================================ */
 
 let ytApiReady = false;
@@ -31,11 +24,19 @@ ytTag.src = "https://www.youtube.com/iframe_api";
 document.head.appendChild(ytTag);
 window.onYouTubeIframeAPIReady = function(){ ytApiReady = true; };
 
+const YT_ECHO_WINDOW_MS = 8000;      // after WE command the player, its state events are answers, not people
+const YT_BLOCKED_AFTER_MS = 4000;    // still not playing this long after the room said "play" -> offer "Tap to join"
+const YT_HEARTBEAT_MS = 5000;
+
+function ytMakeChannel(containerId, size){
+  return { containerId, size, player:null, ready:false,
+           currentId:null, playing:false, position:0, rev:0, controller:null, stateAt:0,
+           applyingUntil:0, blocked:false, watchToken:0 };
+}
 const YTChannels = {
-  video: { containerId:'yt-player-video', player:null, ready:false, suppress:false,
-           currentId:null, playing:false, position:0, lastUpdated:0, controller:null },
-  music: { containerId:'yt-player-music', player:null, ready:false, suppress:false,
-           currentId:null, playing:false, position:0, lastUpdated:0, controller:null }
+  video: ytMakeChannel('yt-player-video', null),
+  // YouTube wants a player of at least 200x200; the music player is kept that big but hidden off-screen
+  music: ytMakeChannel('yt-player-music', { w:220, h:220 })
 };
 
 function extractVideoId(input){
@@ -44,6 +45,7 @@ function extractVideoId(input){
   const m = input.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/);
   return m ? m[1] : null;
 }
+function isValidVideoId(id){ return typeof id === 'string' && /^[a-zA-Z0-9_-]{11}$/.test(id); }
 function isSpotifyLink(input){ return /open\.spotify\.com/i.test(input||''); }
 function parseTimeInput(str){
   str = (str||'').trim();
@@ -54,49 +56,131 @@ function parseTimeInput(str){
   return secs;
 }
 
-// Where playback SHOULD be right now, given a state snapshot and however
-// long it's been since that snapshot was taken.
+// ---------- Helpers ----------
+// Where playback SHOULD be right now. stateAt is OUR clock at the moment we set/received the state.
 function ytEstimatePosition(c){
-  return c.playing ? c.position + (Date.now() - c.lastUpdated)/1000 : c.position;
+  return c.playing ? c.position + (Date.now() - c.stateAt)/1000 : c.position;
+}
+function ytLocalTime(c){
+  try{
+    const t = c.player.getCurrentTime();
+    return (typeof t === 'number' && isFinite(t)) ? t : c.position;
+  }catch(e){ return c.position; }
+}
+function ytLocalState(c){
+  try{ return (c.player && c.ready) ? c.player.getPlayerState() : -1; }catch(e){ return -1; }
+}
+// Is an update (rev, controller) newer than what the channel already holds?
+function ytIsNewer(rev, controller, c){
+  if (rev !== c.rev) return rev > c.rev;
+  return String(controller || '') > String(c.controller || '');
+}
+function ytSetBlocked(ch, blocked){
+  const c = YTChannels[ch];
+  if (c.blocked === blocked) return;
+  c.blocked = blocked;
+  if (window.onChannelBlocked) window.onChannelBlocked(ch, blocked);
 }
 
-function ytEnsurePlayerAndLoad(ch, videoId, startTime){
+// ---------- Player lifecycle ----------
+function ytWhenApiReady(fn){
+  if (ytApiReady && typeof YT !== 'undefined' && YT.Player) fn();
+  else setTimeout(()=> ytWhenApiReady(fn), 300);
+}
+
+function ytCreateOrLoad(ch, videoId, startTime){
   const c = YTChannels[ch];
-  if (window.onChannelLoading) window.onChannelLoading(ch, videoId);
-  if (!ytApiReady || typeof YT==='undefined'){ setTimeout(()=>ytEnsurePlayerAndLoad(ch,videoId,startTime),300); return; }
+  if (c.currentId !== videoId) return;                 // the room moved on while the API was loading
+  const start = Math.max(0, startTime || 0);
   if (!c.player){
-    c.player = new YT.Player(c.containerId, {
-      videoId: videoId,
-      playerVars:{ rel:0, playsinline:1 },
+    const opts = {
+      videoId,
+      playerVars:{ rel:0, playsinline:1, autoplay: c.playing ? 1 : 0, start: Math.floor(start) },
       events:{
         onReady: ()=>{
           c.ready = true;
-          if (typeof startTime==='number' && startTime>0) c.player.seekTo(startTime,true);
-          // A new player defaults to autoplaying — respect the room's actual
-          // state instead (matters most for late joiners landing on a paused room).
-          if (!c.playing) c.player.pauseVideo();
+          // Anything that changed while the player was starting up: line up with the latest state
+          let loaded = null;
+          try{ loaded = c.player.getVideoData && c.player.getVideoData().video_id; }catch(e){}
+          ytApplyToPlayer(ch, loaded !== c.currentId);
         },
-        onStateChange: (e)=>ytOnStateChange(ch,e),
-        onError: (e)=>ytOnError(ch,e)
+        onStateChange: e=> ytOnStateChange(ch, e),
+        onError: e=> ytOnError(ch, e),
+        onAutoplayBlocked: ()=> ytSetBlocked(ch, true)
       }
-    });
-  } else {
-    c.player.loadVideoById(videoId, (typeof startTime==='number')?startTime:0);
+    };
+    if (c.size){ opts.width = String(c.size.w); opts.height = String(c.size.h); }
+    c.player = new YT.Player(c.containerId, opts);
+  } else if (c.ready){
+    if (c.playing) c.player.loadVideoById({ videoId, startSeconds:start });
+    else c.player.cueVideoById({ videoId, startSeconds:start });
+  }
+  // else: the player exists but isn't ready — onReady will load whatever is current by then
+}
+
+// Make the local player match the room's state. `videoChanged` forces a (re)load.
+function ytApplyToPlayer(ch, videoChanged){
+  const c = YTChannels[ch];
+  if (!c.currentId) return;
+  const target = ytEstimatePosition(c);
+
+  if (!c.player || !c.ready || videoChanged){
+    c.applyingUntil = Date.now() + YT_ECHO_WINDOW_MS;
+    ytWhenApiReady(()=> ytCreateOrLoad(ch, c.currentId, ytEstimatePosition(c)));
+    if (c.playing) ytWatchPlayback(ch);
+    return;
+  }
+
+  const st = ytLocalState(c);
+  const drift = Math.abs(ytLocalTime(c) - target);
+  // While buffering we're legitimately behind — only chase if we're far off, or it isn't just buffering
+  if ((st !== 3 && drift > 1.5) || drift > 8) c.player.seekTo(target, true);
+
+  const localPlaying = (st === 1 || st === 3);
+  if (c.playing !== localPlaying){
+    c.applyingUntil = Date.now() + YT_ECHO_WINDOW_MS;
+    if (c.playing){ c.player.playVideo(); ytWatchPlayback(ch); }
+    else c.player.pauseVideo();
   }
 }
 
-function ytOnStateChange(ch,e){
+// The room says "playing" but this device's player never starts (autoplay blocked, slow
+// network, OS paused it): after a few seconds, offer a tap that starts it for this device only.
+function ytWatchPlayback(ch){
   const c = YTChannels[ch];
-  if (window.onChannelStateChange) window.onChannelStateChange(ch, e.data);
-  if (c.suppress) return; // echo of our own action or a remotely-applied update — already handled
-  if (e.data === YT.PlayerState.PLAYING) ytSetState(ch, { playing:true, position:c.player.getCurrentTime() }, true);
-  else if (e.data === YT.PlayerState.PAUSED) ytSetState(ch, { playing:false, position:c.player.getCurrentTime() }, true);
+  const token = ++c.watchToken, videoId = c.currentId;
+  setTimeout(()=>{
+    if (token !== c.watchToken || !c.playing || c.currentId !== videoId) return;
+    const st = ytLocalState(c);
+    if (st !== 1 && st !== 3) ytSetBlocked(ch, true);
+  }, YT_BLOCKED_AFTER_MS);
+}
+
+function ytOnStateChange(ch, e){
+  const c = YTChannels[ch], S = YT.PlayerState;
+  if (window.onChannelStateChange) window.onChannelStateChange(ch, e.data);   // queue auto-advance, vinyl, etc.
+  if (e.data === S.PLAYING) ytSetBlocked(ch, false);
+
+  if (Date.now() < c.applyingUntil){
+    // We just told the player what to do — this is its answer, not a person pressing buttons.
+    if (e.data === S.PLAYING){
+      if (c.playing) c.applyingUntil = 0;           // arrived where the room wants it
+      else c.player.pauseVideo();                    // started playing but the room is paused
+    } else if (e.data === S.PAUSED && !c.playing){
+      c.applyingUntil = 0;
+    }
+    return;                                          // (PAUSED while the room plays = blocked autoplay: the watchdog handles it)
+  }
+  // Phones pause media when you leave the app — that's not the room's decision
+  if (document.hidden || Date.now() - ytLastVisibilityChange < 2000) return;
+
+  // Settled: a change that disagrees with the room is a person using the player's own controls
+  if (e.data === S.PLAYING && !c.playing) ytSetState(ch, { playing:true, position:ytLocalTime(c) });
+  else if (e.data === S.PAUSED && c.playing) ytSetState(ch, { playing:false, position:ytLocalTime(c) });
 }
 
 // YouTube error codes: 2=invalid id, 5=HTML5 player error, 100=removed/private,
-// 101 & 150=embedding disabled by the video's owner (very common on official
-// music videos specifically — this is the #1 real-world reason "music won't
-// play" while random video content works fine).
+// 101 & 150=embedding disabled by the video's owner (the #1 reason official music videos won't play).
 function ytOnError(ch, e){
   const messages = {
     2: "That link doesn't point to a valid video.",
@@ -110,42 +194,46 @@ function ytOnError(ch, e){
   else console.error(`YouTube player error on ${ch}:`, message);
 }
 
-// The single place that updates local state AND broadcasts it.
-function ytSetState(ch, partial, claimController){
+// ---------- Shared state ----------
+// The single place a local ACTION becomes room state: bump the counter, claim control, broadcast.
+function ytSetState(ch, partial){
   const c = YTChannels[ch];
   Object.assign(c, partial);
-  c.lastUpdated = Date.now();
-  if (claimController && typeof myId !== 'undefined' && myId) c.controller = myId;
+  c.rev += 1;
+  c.stateAt = Date.now();
+  c.controller = (typeof myId !== 'undefined' && myId) ? myId : (c.controller || '');
   broadcast({ type:'video', channel:ch, action:'state',
-    currentId:c.currentId, playing:c.playing, position:c.position,
-    lastUpdated:c.lastUpdated, controller:c.controller });
+    currentId:c.currentId, playing:c.playing, position:c.position, rev:c.rev, controller:c.controller });
 }
 
 function ytApplyRemoteState(ch, data){
+  const rev = Number(data.rev), position = Number(data.position);
+  if (!Number.isFinite(rev) || rev < 0 || rev > 1e9 || !Number.isFinite(position) || position < 0) return;
   const c = YTChannels[ch];
-  if (data.lastUpdated <= c.lastUpdated) return; // stale or duplicate — we already have something newer
+  const controller = String(data.controller || '');
+  if (!ytIsNewer(rev, controller, c)) return;        // old or duplicate — we already have something newer
 
-  const videoChanged = data.currentId !== c.currentId;
-  c.currentId = data.currentId; c.playing = data.playing; c.position = data.position;
-  c.lastUpdated = data.lastUpdated; c.controller = data.controller;
-  if (!data.currentId) return;
+  const videoChanged = (data.currentId || null) !== c.currentId;
+  c.currentId = data.currentId || null;
+  c.playing = !!data.playing;
+  c.position = position;
+  c.rev = rev;
+  c.controller = controller;
+  c.stateAt = Date.now();
+  if (!c.currentId) return;
 
-  c.suppress = true;
-  const targetPosition = ytEstimatePosition(c);
-  if (!c.player || videoChanged){
-    ytEnsurePlayerAndLoad(ch, data.currentId, targetPosition);
-  } else {
-    const localTime = c.player.getCurrentTime();
-    if (Math.abs(localTime - targetPosition) > 1.5) c.player.seekTo(targetPosition, true);
-    const localPlaying = c.player.getPlayerState()===1;
-    if (localPlaying !== c.playing) c.playing ? c.player.playVideo() : c.player.pauseVideo();
-  }
-  setTimeout(()=>{ c.suppress=false; }, 900);
+  if (videoChanged && window.onChannelLoading) window.onChannelLoading(ch, c.currentId);
+  ytApplyToPlayer(ch, videoChanged);
 }
-registerHandler('video', (fromId, data)=>{ if (data.action==='state') ytApplyRemoteState(data.channel, data); });
 
-// New joiners get a direct, freshly-timestamped snapshot of whatever's
-// currently loaded — not a broadcast, so it doesn't affect anyone else's state.
+registerHandler('video', (fromId, data)=>{
+  if (data.action !== 'state') return;
+  if (data.channel !== 'video' && data.channel !== 'music') return;           // never index by an arbitrary remote key
+  if (data.currentId != null && !isValidVideoId(data.currentId)) return;       // null = nothing loaded yet
+  ytApplyRemoteState(data.channel, data);
+});
+
+// New joiners get a direct snapshot of what's loaded (not a broadcast, so nobody else's state changes).
 if (typeof window !== 'undefined'){
   window.onPeerConnected = (function(prev){
     return function(peerId){
@@ -155,64 +243,80 @@ if (typeof window !== 'undefined'){
         if (!c.currentId) return;
         sendData(dataConns[peerId], { type:'video', channel:ch, action:'state',
           currentId:c.currentId, playing:c.playing, position:ytEstimatePosition(c),
-          lastUpdated:Date.now(), controller:c.controller });
+          rev:c.rev, controller:c.controller || '' });
       });
     };
   })(window.onPeerConnected);
 }
 
-// Drift-correction heartbeat — only the controller sends it, and only while playing.
+// Drift-correction heartbeat — only the controller, only while its own player is genuinely playing
+// (a frozen player — tab hidden, autoplay blocked — must never drag everyone back to its position).
 setInterval(()=>{
   ['video','music'].forEach(ch=>{
     const c = YTChannels[ch];
-    if (!c.player || !c.ready || !c.currentId) return;
-    if (typeof myId==='undefined' || c.controller !== myId || !c.playing) return;
-    ytSetState(ch, { position: c.player.getCurrentTime() }, false);
+    if (!c.player || !c.ready || !c.currentId || !c.playing) return;
+    if (typeof myId === 'undefined' || c.controller !== myId) return;
+    if (document.hidden || Date.now() < c.applyingUntil) return;
+    if (ytLocalState(c) !== 1) return;
+    ytSetState(ch, { position: ytLocalTime(c) });
   });
-}, 5000);
+}, YT_HEARTBEAT_MS);
 
-// ---------- Public actions used by app.js ----------
+// Coming back to the app: the OS may have paused or frozen the players — line them up again
+let ytLastVisibilityChange = 0;
+document.addEventListener('visibilitychange', ()=>{
+  ytLastVisibilityChange = Date.now();
+  if (document.hidden) return;
+  ['video','music'].forEach(ch=>{ if (YTChannels[ch].currentId) ytApplyToPlayer(ch, false); });
+});
+
+// ---------- Public actions used by app.js / queue.js ----------
 const YTSync = {
   load(ch, videoId){
-    const c = YTChannels[ch];
-    c.suppress = true;
-    ytEnsurePlayerAndLoad(ch, videoId, 0);
-    ytSetState(ch, { currentId:videoId, playing:true, position:0 }, true);
-    setTimeout(()=>{ c.suppress=false; }, 900);
+    ytSetState(ch, { currentId:videoId, playing:true, position:0 });
+    if (window.onChannelLoading) window.onChannelLoading(ch, videoId);
+    ytApplyToPlayer(ch, true);
   },
   play(ch){
-    const c = YTChannels[ch];
-    c.suppress = true;
-    if (c.player) c.player.playVideo();
-    ytSetState(ch, { playing:true, position: c.player ? c.player.getCurrentTime() : c.position }, true);
-    setTimeout(()=>{ c.suppress=false; }, 900);
+    const c = YTChannels[ch]; if (!c.currentId) return;
+    ytSetState(ch, { playing:true, position: c.player && c.ready ? ytLocalTime(c) : c.position });
+    ytApplyToPlayer(ch, false);
   },
   pause(ch){
-    const c = YTChannels[ch];
-    c.suppress = true;
-    if (c.player) c.player.pauseVideo();
-    ytSetState(ch, { playing:false, position: c.player ? c.player.getCurrentTime() : c.position }, true);
-    setTimeout(()=>{ c.suppress=false; }, 900);
+    const c = YTChannels[ch]; if (!c.currentId) return;
+    ytSetState(ch, { playing:false, position: c.player && c.ready ? ytLocalTime(c) : c.position });
+    ytApplyToPlayer(ch, false);
   },
   stop(ch){
-    const c = YTChannels[ch]; if (!c.player || !c.currentId) return;
-    c.suppress = true;               // don't echo our own stop back as a "pause"
+    const c = YTChannels[ch]; if (!c.player || !c.ready || !c.currentId) return;
+    c.applyingUntil = 0;
     c.player.stopVideo();
-    setTimeout(()=>{ c.suppress = false; }, 900);
-    ytSetState(ch, { playing:false, position:0 }, true);
+    ytSetState(ch, { playing:false, position:0 });
   },
   syncToMe(ch){
-    const c = YTChannels[ch]; if (!c.player || !c.currentId) return;
-    ytSetState(ch, { position: c.player.getCurrentTime() }, true);
+    const c = YTChannels[ch]; if (!c.player || !c.ready || !c.currentId) return;
+    ytSetState(ch, { position: ytLocalTime(c) });
+  },
+  seekTo(ch, secs){
+    const c = YTChannels[ch]; if (!c.player || !c.ready || !c.currentId) return false;
+    if (typeof secs !== 'number' || !isFinite(secs) || secs < 0) return false;
+    c.player.seekTo(secs, true);
+    ytSetState(ch, { position: secs });
+    return true;
   },
   seek(ch, inputStr){
-    const c = YTChannels[ch]; if (!c.player) return false;
     const secs = parseTimeInput(inputStr);
-    if (secs===null) return false;
-    c.suppress = true;
-    c.player.seekTo(secs,true);
-    ytSetState(ch, { position: secs }, true);
-    setTimeout(()=>{ c.suppress=false; }, 900);
-    return true;
+    if (secs === null) return false;
+    return YTSync.seekTo(ch, secs);
+  },
+  // "Tap to join": starts this device's player at the room's position (a real tap lets the browser play sound).
+  // Local only — nothing is broadcast, so it can't disturb anyone else.
+  joinPlayback(ch){
+    const c = YTChannels[ch]; if (!c.currentId) return;
+    ytSetBlocked(ch, false);
+    if (!c.player || !c.ready){ ytApplyToPlayer(ch, true); return; }
+    c.applyingUntil = Date.now() + YT_ECHO_WINDOW_MS;
+    c.player.seekTo(ytEstimatePosition(c), true);
+    if (c.playing){ c.player.playVideo(); ytWatchPlayback(ch); } else c.player.pauseVideo();
   }
 };
