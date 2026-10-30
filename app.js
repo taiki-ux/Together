@@ -250,6 +250,7 @@ window.onPeerReady = async function(){
   addSystemMessage(isHost ? `Room created. Share the code "${roomCode}" with your friends.` : `You joined "${roomCode}".`);
   if (isGuest()) addSystemMessage("You're here as a guest — chat messages and playlists aren't saved. Sign up any time from ☰ → Profile.");
   loadMyFavourites();                  // so the hearts in the queue show what's already a favourite
+  BuddyMemory.load();                  // what Buddy has learned about this room before
   RoomPlaylist.reset();
   rpLoadFromDb();                      // members get the room's saved playlist; guests get it live from the others
   if (typeof requestWakeLock === 'function') requestWakeLock();
@@ -442,6 +443,7 @@ function renderTalkGrid(){
 
     const av = document.createElement('div'); av.className = 'avatar talk-avatar'; av.dataset.peer = id;
     av.style.background = nameColor(p.name || '?'); av.textContent = initials(p.name);
+    paintAvatar(av, userIdOf(id), p.name);
     av.style.cursor = 'pointer';
     av.addEventListener('click', ()=> openProfileForPeer(id));
     if (speakingState[id]) av.classList.add('speaking');
@@ -548,82 +550,6 @@ async function callAiFunction(payload, attempt){
 
 document.getElementById('btn-mic-talk').addEventListener('click', toggleMic);
 
-const AI_JOKES = [
-  "Why don't scientists trust atoms? Because they make up everything.",
-  "I told my WiFi I loved it. It said the connection isn't stable.",
-  "Why did the scarecrow win an award? He was outstanding in his field.",
-  "I'm reading a book on anti-gravity. It's impossible to put down.",
-  "Why don't eggs tell jokes? They'd crack each other up.",
-  "I used to be a banker, but I lost interest.",
-  "Parallel lines have so much in common. It's a shame they'll never meet.",
-  "Why did the video call freeze? It saw the WiFi bill."
-];
-const AI_FILLERS = [
-  "Haha, love the energy in here! 🎉",
-  "I'm just a lightweight joke-bot for now — ask me for a joke, a movie, or a song! 🎬🎵",
-  "Ha! Okay okay, carry on 😄",
-  "That's the spirit! Someone say the word 'joke' if you want one 👀"
-];
-function buildRoomContext(){
-  const recentMessages = recentChatLog.slice(-8).map(m=> `${m.name}: ${m.text}`).join('\n');
-  const nowWatching = YTChannels.video.currentId ? (document.getElementById('input-video-url').value.trim() || YTChannels.video.currentId) : null;
-  const nowPlaying = YTChannels.music.currentId ? (document.getElementById('input-music-url').value.trim() || YTChannels.music.currentId) : null;
-  return { recentMessages, nowWatching, nowPlaying, activeGame: getActiveGameSummary() };
-}
-
-// Peeks at whichever .game-panel is currently visible instead of games.js
-// having to push its state here — keeps the game files untouched.
-function getActiveGameSummary(){
-  const panels = document.querySelectorAll('.game-panel');
-  for (const panel of panels){
-    if (panel.style.display === 'block'){
-      const label = panel.id.replace('game-','');
-      const prompt = panel.querySelector('.quiz-question, .draft-category');
-      return prompt ? `Playing ${label}: "${prompt.textContent.trim()}"` : `Playing ${label}`;
-    }
-  }
-  return null;
-}
-
-let lastBuddyCallAt = 0;
-const BUDDY_COOLDOWN_MS = 8000;
-
-async function respondAsAI(triggerText){
-  const now = Date.now();
-  if (now - lastBuddyCallAt < BUDDY_COOLDOWN_MS){
-    toast('🤖 Buddy needs a sec before you ask again');
-    return;
-  }
-  lastBuddyCallAt = now;
-
-  let reply = null;
-  showBuddyTyping(true);
-  try{
-    const json = await callAiFunction({ message: triggerText, context: buildRoomContext(), callerId: myId });
-    if (json.error === 'RATE_LIMITED'){
-      showBuddyTyping(false);
-      toast("🤖 Buddy's getting a lot of requests right now — give it a moment");
-      return;
-    }
-    reply = json.reply;
-    if (!reply) throw new Error('AI returned an empty reply');
-  }catch(e){
-    console.error('AI buddy unavailable after retry:', e);
-    toast(`🤖 AI is offline right now (${e.message}) — using a scripted reply instead`, 'err');
-  }
-  showBuddyTyping(false);
-  if (!reply) reply = scriptedAIReply(triggerText);
-  sendChatMessage('🤖 Buddy', reply, true);
-}
-
-function scriptedAIReply(triggerText){
-  const lower = triggerText.toLowerCase();
-  if (/joke/.test(lower)) return AI_JOKES[Math.floor(Math.random()*AI_JOKES.length)];
-  if (/movie|watch/.test(lower)) return `Tonight's pick: 🎬 "${suggestMovie()}" — trust me on this one.`;
-  if (/song|music|track/.test(lower)) return `Try this: 🎵 "${suggestSong()}" — put it on and thank me later.`;
-  return AI_FILLERS[Math.floor(Math.random()*AI_FILLERS.length)];
-}
-
 // ---------- Reactions ----------
 function spawnFloatingReaction(pane, emoji){
   const layer = document.getElementById('reaction-layer-' + pane);
@@ -680,15 +606,21 @@ function openSettings(){
 document.getElementById('btn-settings-close').addEventListener('click', ()=>{ document.getElementById('settings-overlay').style.display='none'; });
 document.getElementById('settings-overlay').addEventListener('click', e=>{ if (e.target.id==='settings-overlay') e.currentTarget.style.display='none'; });
 
-document.getElementById('btn-rename-save').addEventListener('click', ()=>{
-  const newName = document.getElementById('input-rename').value.trim();
-  if (!newName || newName===myName) return;
+// Changes the name shown for me in this room (used by Settings -> Your name, and when the nickname is edited on the profile)
+function applyNewDisplayName(newName){
+  newName = (newName || '').trim();
+  if (!newName || newName === myName) return;
   myName = newName;
   if (isGuest()) setGuestName(newName);
-  participants[myId].name = myName;
+  if (participants[myId]) participants[myId].name = myName;
+  saveSession();
   renderOrbit();
-  broadcast({type:'rename', name:myName});
+  broadcast({ type:'rename', name:myName });
+  refreshMyPresence();
   addSystemMessage(`You are now known as "${myName}"`);
+}
+document.getElementById('btn-rename-save').addEventListener('click', ()=>{
+  applyNewDisplayName(document.getElementById('input-rename').value);
 });
 document.getElementById('toggle-sound').addEventListener('click', function(){ window.soundOn=!window.soundOn; this.classList.toggle('on',window.soundOn); });
 document.getElementById('toggle-autosync').addEventListener('click', function(){ window.autoSyncOn=!window.autoSyncOn; this.classList.toggle('on',window.autoSyncOn); });
@@ -738,7 +670,7 @@ window.onAuthChange = function(user){
 
 // ---------- Auth: sign up / log in ----------
 function setAuthTab(tab){
-  const panels = { login:'auth-login', signup:'auth-signup', forgot:'auth-forgot', reset:'auth-reset', guest:'auth-guest' };
+  const panels = { login:'auth-login', signup:'auth-signup', forgot:'auth-forgot', code:'auth-code', reset:'auth-reset', guest:'auth-guest' };
   Object.entries(panels).forEach(([name, id])=>{
     const el = document.getElementById(id);
     if (el) el.style.display = (name === tab) ? 'block' : 'none';
@@ -748,11 +680,13 @@ function setAuthTab(tab){
   if (tabs) tabs.style.display = (tab === 'login' || tab === 'signup') ? '' : 'none';
   const status = document.getElementById('auth-status');
   if (status) status.textContent = '';
+  codeFlowActive = (tab === 'code');
   if (tab === 'guest'){                                       // remember the last guest nickname on this device
     const field = document.getElementById('guest-name');
     if (field && !field.value){ try{ field.value = localStorage.getItem('together_guest_name') || ''; }catch(e){} }
   }
 }
+let codeFlowActive = false;     // true while someone is entering an emailed code (so a link-style recovery event doesn't hijack the screen)
 document.querySelectorAll('.auth-tab').forEach(btn => btn.addEventListener('click', ()=> setAuthTab(btn.dataset.tab)));
 
 // link = { label, tab, email? } adds a tappable shortcut, e.g. "Log in instead"
@@ -893,21 +827,21 @@ async function handleLogin(){
 // Flow: "Forgot password?" -> email with a link -> the link opens the app on the "choose a new
 // password" screen (supabase-client.js flags it) -> save -> straight into the app.
 let resetCooldownTimer = null;
-function startResetCooldown(btn, seconds){
+function startResetCooldown(btn, seconds, label){
   clearInterval(resetCooldownTimer);
   let left = seconds;
   const tick = ()=>{
-    if (left <= 0){ clearInterval(resetCooldownTimer); btn.disabled = false; btn.textContent = 'Send reset link'; return; }
+    if (left <= 0){ clearInterval(resetCooldownTimer); btn.disabled = false; btn.textContent = label; return; }
     btn.disabled = true; btn.textContent = `Send again in ${left}s`; left--;
   };
   tick();
   resetCooldownTimer = setInterval(tick, 1000);
 }
 
-async function handleForgot(){
-  const btn = document.getElementById('btn-forgot-send');
-  const email = document.getElementById('forgot-email').value.trim();
-  if (!/^\S+@\S+\.\S+$/.test(email)){ showAuthStatus('Enter the email you signed up with.', true); return; }
+// Sends the reset email (a 6-digit code, plus a link). The code works on any device and never
+// depends on a website address, so it can't hit a "can't connect" page.
+let resetEmail = '';
+async function sendResetEmail(email, btn, label){
   btn.disabled = true;
   showAuthStatus('Sending…');
   const { error } = await requestPasswordReset(email);
@@ -915,11 +849,80 @@ async function handleForgot(){
     btn.disabled = false;
     if (/rate limit|too many|seconds/i.test(String(error.message || ''))) showAuthStatus('Please wait a minute before asking for another email.', true);
     else { console.error('Password reset error:', error); showAuthStatus("Couldn't send the email right now. Please try again.", true); }
-    return;
+    return false;
   }
-  // Same message whether or not the email has an account, on purpose.
-  showAuthStatus('If an account exists for that email, a reset link is on its way. Check your inbox (and spam).', false);
-  startResetCooldown(btn, 60);
+  resetEmail = email;
+  startResetCooldown(btn, 60, label);
+  return true;
+}
+function showCodeStep(){
+  document.getElementById('code-email-label').textContent = resetEmail;
+  setAuthTab('code');
+  document.getElementById('code-input').focus();
+}
+
+async function handleForgot(){
+  const btn = document.getElementById('btn-forgot-send');
+  const email = document.getElementById('forgot-email').value.trim();
+  if (!/^\S+@\S+\.\S+$/.test(email)){ showAuthStatus('Enter the email you signed up with.', true); return; }
+  if (!(await sendResetEmail(email, btn, 'Email me a code'))) return;
+  showCodeStep();
+  // Same wording whether or not the email has an account, on purpose.
+  showAuthStatus("If an account exists for that email, we've sent a code. Check your inbox (and spam).", false);
+}
+
+async function handleCodeResend(){
+  const btn = document.getElementById('btn-code-resend');
+  if (!resetEmail) { setAuthTab('forgot'); return; }
+  if (await sendResetEmail(resetEmail, btn, 'Send a new code')) showAuthStatus('A new code is on its way. Use the newest email.', false);
+}
+
+async function handleCodeReset(){
+  const btn = document.getElementById('btn-code-save');
+  const code = document.getElementById('code-input').value.replace(/\s+/g, '');
+  const pw = document.getElementById('code-password').value;
+  const pw2 = document.getElementById('code-password2').value;
+  if (!resetEmail){ setAuthTab('forgot'); showAuthStatus('Enter your email first.', true); return; }
+  if (!window.__codeVerified && !/^\d{6,10}$/.test(code)){ showAuthStatus('Enter the code from the email (digits only).', true); return; }
+  if (pw.length < 6){ showAuthStatus('Choose a password with at least 6 characters.', true); return; }
+  if (pw !== pw2){ showAuthStatus("The two passwords don't match.", true); return; }
+  btn.disabled = true;
+  try{
+    if (!window.__codeVerified){
+      showAuthStatus('Checking your code…');
+      window.__recoveryPending = true;           // keep the app closed until the new password is saved
+      const { error } = await withTimeout(verifyRecoveryCode(resetEmail, code), 15000, "That's taking too long — check your connection and try again.");
+      if (error){
+        window.__recoveryPending = false;
+        const msg = String(error.message || '');
+        if (/rate limit|too many/i.test(msg)) showAuthStatus('Too many tries — please wait a minute and try again.', true);
+        else if (/expired|invalid|otp|token/i.test(msg)) showAuthStatus('That code is wrong or has expired. Use the newest email, or send a new code.', true);
+        else { console.error('Code check error:', error); showAuthStatus("Couldn't check that code. Please try again.", true); }
+        return;
+      }
+      window.__codeVerified = true;
+    }
+    showAuthStatus('Saving your new password…');
+    const { error: pwError } = await withTimeout(setNewPassword(pw), 15000, "That's taking too long — check your connection and try again.");
+    if (pwError){
+      const msg = String(pwError.message || '');
+      if (/different from the old/i.test(msg)) showAuthStatus('Choose a password you are not already using.', true);
+      else { console.error('Update password error:', pwError); showAuthStatus("Couldn't save your new password. Please try again.", true); }
+      return;                                      // the code is already used up; they can just retry the password
+    }
+    window.__recoveryPending = false;
+    window.__codeVerified = false;
+    resetEmail = '';
+    if (!myProfile) await loadMyProfile();
+    if (myProfile){ showAuthStatus('Password updated — welcome back!'); await enterAppAsUser(); return; }
+    setAuthTab('login');
+    showAuthStatus('Password updated. Please log in.', false);
+  }catch(err){
+    if (!window.__codeVerified) window.__recoveryPending = false;
+    showAuthStatus(err.message || 'Something went wrong. Please try again.', true);
+  }finally{
+    btn.disabled = false;
+  }
 }
 
 function showResetScreen(){
@@ -927,7 +930,7 @@ function showResetScreen(){
   showOnly('screen-auth', 'flex');
   setAuthTab('reset');
 }
-window.onPasswordRecovery = showResetScreen;
+window.onPasswordRecovery = ()=>{ if (!codeFlowActive) showResetScreen(); };
 
 async function handleResetSave(){
   const btn = document.getElementById('btn-reset-save');
@@ -964,6 +967,15 @@ document.getElementById('btn-forgot-link').addEventListener('click', ()=>{
   if (typed) document.getElementById('forgot-email').value = typed;
 });
 document.getElementById('btn-forgot-back').addEventListener('click', ()=> setAuthTab('login'));
+document.getElementById('btn-forgot-havecode').addEventListener('click', ()=>{
+  const email = document.getElementById('forgot-email').value.trim();
+  if (!/^\S+@\S+\.\S+$/.test(email)){ showAuthStatus('Type your email above first, then tap here.', true); return; }
+  resetEmail = email;
+  showCodeStep();
+});
+document.getElementById('btn-code-save').addEventListener('click', handleCodeReset);
+document.getElementById('btn-code-resend').addEventListener('click', handleCodeResend);
+document.getElementById('btn-code-back').addEventListener('click', ()=> setAuthTab('forgot'));
 document.getElementById('btn-forgot-send').addEventListener('click', handleForgot);
 document.getElementById('btn-reset-save').addEventListener('click', handleResetSave);
 
@@ -1044,7 +1056,7 @@ document.getElementById('btn-login').addEventListener('click', e=>{ e.preventDef
 [['login-email','btn-login'],['login-password','btn-login'],
  ['signup-first','btn-signup'],['signup-last','btn-signup'],['signup-username','btn-signup'],
  ['signup-email','btn-signup'],['signup-password','btn-signup'],
- ['guest-name','btn-guest-go'],['forgot-email','btn-forgot-send'],['reset-password','btn-reset-save'],['reset-password2','btn-reset-save']].forEach(([input, button])=>{
+ ['guest-name','btn-guest-go'],['forgot-email','btn-forgot-send'],['code-input','btn-code-save'],['code-password','btn-code-save'],['code-password2','btn-code-save'],['reset-password','btn-reset-save'],['reset-password2','btn-reset-save']].forEach(([input, button])=>{
   document.getElementById(input).addEventListener('keydown', e=>{ if (e.key === 'Enter'){ e.preventDefault(); document.getElementById(button).click(); } });
 });
 

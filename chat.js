@@ -71,10 +71,11 @@ async function loadChatHistory(){
     .from('chat_messages').select('*').eq('room_code', roomCode)
     .order('created_at', { ascending:true }).limit(500);
   if (error){ console.error('Failed to load chat history:', error); return; }
+  ensureAvatars((data || []).map(r => r.sender_id).filter(Boolean));   // one batch for everyone in the history
   (data || []).forEach(row=>{
     const mine = !!(currentUser && row.sender_id === currentUser.id);
     addChatMessage({
-      id: row.id, fromId: mine ? myId : null, name: row.sender_name, text: row.text,
+      id: row.id, fromId: mine ? myId : null, userId: row.sender_id || null, name: row.sender_name, text: row.text,
       mine, isAI: !!row.is_ai, timestamp: new Date(row.created_at).getTime(),
       replyTo: row.reply_to || null, reactions: row.reactions || {},
       edited: !!row.edited, deleted: !!row.deleted, fromHistory: true
@@ -86,11 +87,12 @@ async function loadChatHistory(){
 function sendChatMessage(name, text, isAI, replyTo){
   const id = makeMessageId();
   const timestamp = Date.now();
-  const msg = { id, fromId:myId, name, text, mine:true, isAI:!!isAI, timestamp,
+  const msg = { id, fromId:myId, userId: (!isAI && currentUser) ? currentUser.id : null, name, text, mine:true, isAI:!!isAI, timestamp,
     replyTo: replyTo || null, reactions:{}, edited:false, deleted:false };
   addChatMessage(msg);
   broadcast({ type:'chat', action:'send', id, name, text, isAI:!!isAI, timestamp, replyTo: replyTo || null });
   saveMessageToDb(msg);
+  return msg;
 }
 
 function sendChatFromInput(){
@@ -110,10 +112,15 @@ function sendChatFromInput(){
   }
 
   const replySnapshot = replyingTo;
-  sendChatMessage(myName, text, false, replySnapshot);
+  const sent = sendChatMessage(myName, text, false, replySnapshot);
   cancelComposeContext();
   input.value = '';
-  if (/(?:^|\s)@(ai|buddy)(?:\s|$)/i.test(text) && typeof respondAsAI === 'function') respondAsAI(text);
+  // Buddy answers when he's mentioned, OR when you reply to one of his messages (no @ needed)
+  const mentionsBuddy = /(?:^|\s)@(ai|buddy)(?:\s|$)/i.test(text);
+  const repliedToBuddy = !!(replySnapshot && chatMessages[replySnapshot.id] && chatMessages[replySnapshot.id].isAI);
+  if ((mentionsBuddy || repliedToBuddy) && typeof respondAsAI === 'function'){
+    respondAsAI(text, { trigger: { id: sent.id, name: sent.name, text: sent.text }, replyTo: replySnapshot });
+  }
 }
 
 // ---------- Scrolling ----------
@@ -158,6 +165,7 @@ function addChatMessage(msg){
       : `${escapeHtml(msg.text)}${msg.edited ? ' <span class="edited-tag">(edited)</span>' : ''}`;
 
     div.innerHTML = `
+      <span class="msg-swipe-icon l" aria-hidden="true">↩</span><span class="msg-swipe-icon r" aria-hidden="true">↩</span>
       <div class="msg-avatar" style="background:${nameColor(msg.name)}">${initials(msg.name)}</div>
       <div class="msg-body">
         ${grouped ? '' : `
@@ -174,6 +182,8 @@ function addChatMessage(msg){
     log.appendChild(div);
     if (stickToBottom) scrollChatToBottom();
     attachMessageInteractions(div, msg.id);
+    paintAvatar(div.querySelector('.msg-avatar'), msg.userId, msg.name);
+    if (msg.userId) ensureAvatars([msg.userId]);
     renderMessageReactions(msg.id);
   }
 
@@ -197,7 +207,7 @@ function addSystemMessage(text){
 // ---------- Remote sync ----------
 registerHandler('chat', (fromId, data)=>{
   if (data.action === 'send'){
-    addChatMessage({ id:data.id, fromId, name:data.name, text:data.text, mine:false,
+    addChatMessage({ id:data.id, fromId, userId: (!data.isAI && participants[fromId]) ? participants[fromId].userId : null, name:data.name, text:data.text, mine:false,
       isAI:!!data.isAI, timestamp:data.timestamp || Date.now(), replyTo:data.replyTo || null,
       reactions:{}, edited:false, deleted:false });
     if (window.onChatReceived) window.onChatReceived();
@@ -354,7 +364,52 @@ function attachMessageInteractions(msgEl, id){
   msgEl.addEventListener('mouseup', cancel);
   msgEl.addEventListener('mouseleave', cancel);
   msgEl.addEventListener('contextmenu', e=>{ e.preventDefault(); openMessageActions(id); });
+
+  // Swipe a message sideways to reply (like WhatsApp). Either direction works; the little
+  // arrow grows as you drag and the message lets go with a tap once you're past the line.
+  let sx = 0, sy = 0, tracking = false, swiping = false, armed = false, dir = 0;
+  const reset = ()=>{
+    msgEl.classList.remove('swiping', 'armed');
+    msgEl.style.setProperty('--swipe-x', '0px');
+    msgEl.style.setProperty('--swipe-p', '0');
+    tracking = swiping = armed = false;
+  };
+  msgEl.addEventListener('touchstart', e=>{
+    if (e.touches.length !== 1) return;
+    sx = e.touches[0].clientX; sy = e.touches[0].clientY;
+    tracking = true; swiping = false; armed = false;
+  }, { passive:true });
+  msgEl.addEventListener('touchmove', e=>{
+    if (!tracking) return;
+    const mx = e.touches[0].clientX - sx, my = e.touches[0].clientY - sy;
+    if (!swiping){
+      if (Math.abs(my) > 10 && Math.abs(my) > Math.abs(mx)){ tracking = false; return; }          // it's a scroll
+      if (Math.abs(mx) < 12 || Math.abs(mx) < Math.abs(my) * 1.4) return;                          // not clearly sideways yet
+      swiping = true;
+      dir = mx > 0 ? 1 : -1;
+      msgEl.dataset.swipe = dir > 0 ? 'right' : 'left';
+      msgEl.classList.add('swiping');
+      cancel();
+    }
+    const pulled = Math.max(0, mx * dir);                                   // only follow the direction it started in
+    msgEl.style.setProperty('--swipe-x', (dir * Math.min(SWIPE_MAX, pulled * 0.7)) + 'px');
+    msgEl.style.setProperty('--swipe-p', String(Math.min(1, pulled / SWIPE_TRIGGER)));
+    const nowArmed = pulled >= SWIPE_TRIGGER;
+    if (nowArmed !== armed){
+      armed = nowArmed;
+      msgEl.classList.toggle('armed', armed);
+      if (armed && navigator.vibrate) navigator.vibrate(8);
+    }
+  }, { passive:true });
+  msgEl.addEventListener('touchend', ()=>{
+    const reply = swiping && armed;
+    reset();
+    if (reply) startReply(id);
+  });
+  msgEl.addEventListener('touchcancel', reset);
 }
+const SWIPE_TRIGGER = 70;     // how far (px) you drag before it counts as a reply
+const SWIPE_MAX = 80;         // how far the message is allowed to slide
 
 function openMessageActions(id){
   const msg = chatMessages[id];

@@ -73,10 +73,21 @@
     </div>
 
     <div id="auth-forgot" style="display:none;">
-      <p class="hint" style="margin:0 0 14px;">Enter the email you signed up with and we'll send you a link to choose a new password.</p>
+      <p class="hint" style="margin:0 0 14px;">Enter the email you signed up with and we'll email you a 6-digit code (and a link) to choose a new password.</p>
       <div class="field"><label>Email</label><input type="text" id="forgot-email" placeholder="you@example.com" autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false"></div>
-      <button class="btn btn-primary btn-block" id="btn-forgot-send" type="button">Send reset link</button>
+      <button class="btn btn-primary btn-block" id="btn-forgot-send" type="button">Email me a code</button>
+      <div style="text-align:center; margin-top:12px; font-size:13px;"><button type="button" class="auth-link" id="btn-forgot-havecode">I already have a code</button></div>
       <button class="btn btn-ghost btn-sm btn-block" id="btn-forgot-back" type="button" style="margin-top:10px;">← Back to log in</button>
+    </div>
+
+    <div id="auth-code" style="display:none;">
+      <p class="hint" style="margin:0 0 14px;">We emailed a 6-digit code to <b id="code-email-label"></b>. Enter it below and choose a new password.</p>
+      <div class="field"><label>6-digit code</label><input type="text" id="code-input" placeholder="123456" inputmode="numeric" autocomplete="one-time-code" maxlength="10" spellcheck="false"></div>
+      <div class="field"><label>New password</label><input type="password" id="code-password" placeholder="At least 6 characters" autocomplete="new-password"></div>
+      <div class="field"><label>Confirm new password</label><input type="password" id="code-password2" placeholder="Type it again" autocomplete="new-password"></div>
+      <button class="btn btn-primary btn-block" id="btn-code-save" type="button">Reset password</button>
+      <button class="btn btn-ghost btn-sm btn-block" id="btn-code-resend" type="button" style="margin-top:10px;">Send a new code</button>
+      <button class="btn btn-ghost btn-sm btn-block" id="btn-code-back" type="button" style="margin-top:6px;">← Back</button>
     </div>
 
     <div id="auth-reset" style="display:none;">
@@ -522,7 +533,7 @@
           <div class="chat-col" id="chat-col">
             <div class="chat-log" id="chat-log"></div>
             <p class="typing-indicator-text" id="typing-indicator"></p>
-            <p class="chat-hint">Tip: mention <b>@Buddy</b> for a joke, a movie pick, or a song pick. Press and hold a message for more options.</p>
+            <p class="chat-hint">Tip: mention <b>@Buddy</b>, or swipe any message to reply. Swipe one of Buddy's and he'll answer back. Press and hold for more options.</p>
             <div class="compose-context-bar" id="compose-context-bar" style="display:none;">
               <span class="compose-context-label" id="compose-context-label"></span>
               <button class="icon-btn" id="btn-cancel-compose-context" type="button" aria-label="Cancel">✕</button>
@@ -658,6 +669,7 @@
 <!-- Config & init (must load first, before anything else) -->
 <script src="config.js"></script>
 <script src="supabase-client.js"></script>
+<script src="avatars.js"></script>
 
 <!-- Feature modules (depends on config) -->
 <script src="peer-manager.js"></script>
@@ -667,7 +679,6 @@
 <script src="youtube-sync.js"></script>
 <script src="youtube-search.js"></script>
 <script src="queue.js"></script>
-<script src="activity-log.js"></script>
 <script src="profile.js"></script>
 <script src="music-player.js"></script>
 <script src="playlists.js"></script>
@@ -676,6 +687,7 @@
 <script src="cinema.js"></script>
 <script src="background.js"></script>
 <script src="games.js"></script>
+<script src="buddy.js"></script>
 
 <!-- Main app (depends on all modules above) -->
 <script src="app.js"></script>

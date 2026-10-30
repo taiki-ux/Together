@@ -1,19 +1,19 @@
 /* ============================================================
    PROFILE.JS
-   Profile pane (self and others') + the friend system.
+   The profile screen (yours and other people's) and the friend system.
 
-   Opened by: the new "👤 Profile" nav tab (own profile), or
-   tapping any avatar in the orbit / talk grid (their profile —
-   resolved via the Supabase user id each peer now shares over
-   presence, see peer-manager.js's joinRoomPresence).
+   A profile is a card, Discord-style: a cover colour, a round picture, your name and @nickname,
+   a status, a bio and when you joined. Below it: ❤ Favourites, and — on your own profile —
+   the songs and videos you saved in rooms (📌) and your friends.
 
-   Taste sections (favorites/recently played/games) are read-only,
-   fed automatically by activity-log.js — nothing here writes to
-   activity_log directly. Bio/status are the only fields a user
-   sets themselves.
+   Your email is shown ONLY on your own profile. It lives in your account, never in the profile
+   row other people can read, so it can't leak.
 
-   Needs the `friendships` table and the `bio`/`status` columns on
-   `profiles` — see supabase/schema-profile-friends.sql.
+   You edit everything from "Edit profile": picture, cover colour, names, nickname, status, bio,
+   email and password.
+
+   Opened by: ☰ → Profile (your own), or tapping anyone's picture in a room.
+   Needs supabase/schema-profile-v2.sql for pictures and cover colours.
    ============================================================ */
 
 // ---------- Global online presence ----------
@@ -124,25 +124,6 @@ function closeProfileScreen(){
 document.getElementById('btn-profile-back')?.addEventListener('click', closeProfileScreen);
 
 // ---------- Rendering ----------
-function dedupeConsecutive(items){
-  const out = [];
-  for (const it of items){
-    if (out.length && out[out.length-1].video_id === it.video_id) continue;
-    out.push(it);
-  }
-  return out;
-}
-function renderTasteSection(title, items, isRecentList){
-  const list = isRecentList ? dedupeConsecutive(items) : items;
-  if (!list.length) return '';
-  return `
-    <div class="profile-taste-section">
-      <h4>${title}</h4>
-      <div class="taste-list">
-        ${list.map(it=> `<div class="taste-item"><span>${escapeHtml(it.title)}</span>${it.count>1?`<span class="taste-count">×${it.count}</span>`:''}</div>`).join('')}
-      </div>
-    </div>`;
-}
 function renderFriendButtonHTML(friendInfo){
   if (!friendInfo) return '';
   if (friendInfo.status === 'friends') return `<button class="btn btn-secondary btn-sm" id="btn-friend-action" data-status="friends" type="button">✓ Friends</button>`;
@@ -150,6 +131,7 @@ function renderFriendButtonHTML(friendInfo){
   if (friendInfo.status === 'pending-received') return `<button class="btn btn-primary btn-sm" id="btn-friend-action" data-status="pending-received" type="button">Accept friend request</button>`;
   return `<button class="btn btn-primary btn-sm" id="btn-friend-action" data-status="none" type="button">+ Add friend</button>`;
 }
+
 function wireFriendButton(userId, friendInfo){
   const btn = document.getElementById('btn-friend-action');
   if (!btn) return;
@@ -169,6 +151,7 @@ function wireFriendButton(userId, friendInfo){
     renderProfile(userId, '', false);
   });
 }
+
 async function renderOwnFriendsHTML(){
   const [requests, friends] = await Promise.all([fetchIncomingRequests(), fetchFriends()]);
   let html = '';
@@ -196,6 +179,7 @@ async function renderOwnFriendsHTML(){
   html += `</div>`;
   return html;
 }
+
 function wireOwnFriendsSectionButtons(){
   document.querySelectorAll('[data-accept-req]').forEach(btn=>{
     btn.addEventListener('click', async ()=>{ await respondToFriendRequest(btn.dataset.acceptReq, true); toast("You're now friends 🎉"); openProfileForPeer(myId); });
@@ -206,30 +190,6 @@ function wireOwnFriendsSectionButtons(){
   document.querySelectorAll('[data-view-friend]').forEach(row=>{
     row.addEventListener('click', ()=> renderProfile(row.dataset.viewFriend, '', false));
   });
-}
-function showProfileEditForm(profile){
-  const formEl = document.getElementById('profile-edit-form');
-  if (!formEl) return;
-  formEl.style.display = 'block';
-  formEl.innerHTML = `
-    <div class="field"><label>Status</label>
-      <input type="text" id="profile-edit-status" maxlength="60" placeholder="What are you up to?" value="${escapeHtml(profile?.status||'')}">
-    </div>
-    <div class="field"><label>Bio</label>
-      <input type="text" id="profile-edit-bio" maxlength="160" placeholder="A short bio" value="${escapeHtml(profile?.bio||'')}">
-    </div>
-    <button class="btn btn-primary btn-sm" id="btn-save-profile-edit" type="button">Save</button>
-    <button class="btn btn-ghost btn-sm" id="btn-cancel-profile-edit" type="button">Cancel</button>
-  `;
-  document.getElementById('btn-save-profile-edit').addEventListener('click', async ()=>{
-    const status = document.getElementById('profile-edit-status').value.trim();
-    const bio = document.getElementById('profile-edit-bio').value.trim();
-    const { error } = await supabaseClient.from('profiles').update({ status, bio }).eq('id', currentUser.id);
-    if (error){ toast("Couldn't save your profile", 'err'); return; }
-    toast('Profile updated ✨');
-    openProfileForPeer(myId);
-  });
-  document.getElementById('btn-cancel-profile-edit').addEventListener('click', ()=>{ formEl.style.display='none'; formEl.innerHTML=''; });
 }
 
 // ---------- My playlist (everything I saved with 📌, across rooms) ----------
@@ -305,9 +265,62 @@ function wireFavouriteButtons(items, isOwn){
   });
 }
 
+// ---------- Profile card ----------
+function profileMemberSince(profile){
+  if (!profile || !profile.created_at) return '';
+  const d = new Date(profile.created_at);
+  return isNaN(d) ? '' : d.toLocaleDateString([], { month: 'long', year: 'numeric' });
+}
+function profileDisplayName(profile, fallback){
+  const full = profile ? `${profile.first_name || ''} ${profile.last_name || ''}`.trim() : '';
+  return full || (profile && profile.username) || fallback || 'Someone';
+}
+function profileCoverHex(profile, seed){
+  return safeCoverColor(profile && profile.cover_color) || defaultCover(seed);
+}
+
+// The card is also used (without the extras) as the live preview inside the editor
+function profileCardHTML(o){
+  const { profile, isOwn, online, friendInfo } = o;
+  const name = profileDisplayName(profile, o.fallbackName);
+  const username = profile && profile.username ? profile.username : '';
+  const photo = safeAvatarUrl(profile && profile.avatar_url);
+  const cover = profileCoverHex(profile, username || name);
+  const since = profileMemberSince(profile);
+  const status = (profile && profile.status) || '';
+  const bio = (profile && profile.bio) || '';
+  const avatarStyle = photo ? `background-image:url(${escapeHtml(photo)})` : `background:${nameColor(username || name)}`;
+  return `
+    <section class="pf-card" aria-label="Profile">
+      <div class="pf-cover" style="background:${coverGradient(cover)}">
+        ${isOwn ? '<button class="pf-edit-btn" id="btn-edit-profile" type="button">✎ Edit profile</button>' : ''}
+      </div>
+      <div class="pf-head">
+        <div class="pf-avatar-wrap">
+          <div class="pf-avatar ${photo ? 'has-photo' : ''}" style="${avatarStyle}" role="img" aria-label="${escapeHtml(name)}'s picture">${photo ? '' : escapeHtml(initials(name))}</div>
+          <span class="online-dot pf-online ${online ? 'on' : ''}" title="${online ? 'Online' : 'Offline'}"></span>
+        </div>
+        ${isOwn ? '' : `<div class="pf-actions">${renderFriendButtonHTML(friendInfo)}</div>`}
+      </div>
+      <div class="pf-body">
+        <h2 class="pf-name">${escapeHtml(name)}</h2>
+        ${username ? `<div class="pf-username">@${escapeHtml(username)}</div>` : ''}
+        ${status ? `<div class="pf-status">🎙️ ${escapeHtml(status)}</div>` : ''}
+        ${bio ? `<div class="pf-block"><h4>About me</h4><p class="pf-bio">${escapeHtml(bio)}</p></div>`
+               : (isOwn ? '<div class="pf-block"><h4>About me</h4><p class="hint">Add a short bio so people know a bit about you.</p></div>' : '')}
+        <div class="pf-meta">
+          ${since ? `<span>🗓 Member since ${escapeHtml(since)}</span>` : ''}
+          ${isOwn && currentUser && currentUser.email ? `<span class="pf-email">✉ ${escapeHtml(currentUser.email)} <em>🔒 only you can see this</em></span>` : ''}
+        </div>
+      </div>
+    </section>`;
+}
+
+let profileRenderSeq = 0;
 async function renderProfile(userId, fallbackName, isOwn){
   const container = document.getElementById('profile-view');
   if (!container) return;
+  const seq = ++profileRenderSeq;                    // if they tap around quickly, only the newest render wins
   container.innerHTML = '<p class="hint">Loading profile…</p>';
   saveView({ profile: { userId, name: fallbackName || '', isOwn: !!isOwn } });   // so a reload reopens this profile
 
@@ -350,57 +363,244 @@ async function renderProfile(userId, fallbackName, isOwn){
 
   const { data: profile } = await supabaseClient.from('profiles').select('*').eq('id', userId).maybeSingle();
   const friendInfo = isOwn ? null : await fetchFriendshipStatus(userId);
-  const online = isUserOnline(userId);
-
-  const [recentVideo, recentMusic, topVideo, topMusic, topGames, favourites] = await Promise.all([
-    fetchRecentActivityFor(userId, 'video', 6),
-    fetchRecentActivityFor(userId, 'music', 6),
-    fetchTopPlayedFor(userId, 'video', 5),
-    fetchTopPlayedFor(userId, 'music', 5),
-    fetchTopPlayedFor(userId, 'game', 5),
-    fetchFavouritesFor(userId, 40)
+  const online = isOwn ? true : isUserOnline(userId);
+  const [favourites, friendsHTML, playlistHTML] = await Promise.all([
+    fetchFavouritesFor(userId, 40),
+    isOwn ? renderOwnFriendsHTML() : '',
+    isOwn ? renderMyPlaylistHTML() : ''
   ]);
-  const friendsHTML = isOwn ? await renderOwnFriendsHTML() : '';
-  const playlistHTML = isOwn ? await renderMyPlaylistHTML() : '';
-
-  const displayName = (profile ? `${profile.first_name||''} ${profile.last_name||''}`.trim() : '') || fallbackName || 'Someone';
-  const username = profile ? profile.username : null;
-  const bio = profile?.bio || '';
-  const status = profile?.status || '';
+  if (seq !== profileRenderSeq) return;
+  if (profile){ Avatars.set(userId, { url: profile.avatar_url, cover: profile.cover_color }); refreshAvatars(); }
 
   container.innerHTML = `
-    <div class="profile-header">
-      <div class="profile-avatar" style="background:${nameColor(displayName)}">${initials(displayName)}</div>
-      <div class="profile-name">${escapeHtml(displayName)}</div>
-      ${username ? `<div class="profile-username">@${escapeHtml(username)}</div>` : ''}
-      <div class="profile-online-row"><span class="online-dot ${online?'on':''}"></span>${online?'Online':'Offline'}</div>
-      ${status ? `<div class="profile-status">🎙️ ${escapeHtml(status)}</div>` : ''}
-      ${bio ? `<p class="profile-bio">${escapeHtml(bio)}</p>` : (isOwn ? '<p class="hint">Add a bio so people know a bit about you.</p>' : '')}
-      ${isOwn ? '<button class="btn btn-ghost btn-sm" id="btn-edit-profile" type="button">✏️ Edit profile</button>' : renderFriendButtonHTML(friendInfo)}
-    </div>
-    <div id="profile-edit-form" style="display:none;"></div>
-
+    ${profileCardHTML({ profile, fallbackName, isOwn, online, friendInfo })}
     ${renderFavouritesHTML(favourites, isOwn)}
-    ${renderTasteSection('🎬 Most watched', topVideo)}
-    ${renderTasteSection('🕓 Recently watched', recentVideo, true)}
-    ${renderTasteSection('🎵 Most played', topMusic)}
-    ${renderTasteSection('🕓 Recently played', recentMusic, true)}
-    ${renderTasteSection('🎮 Most played games', topGames)}
-
     ${playlistHTML}
-
     ${friendsHTML}
   `;
 
   wireFavouriteButtons(favourites, isOwn);
   if (isOwn){
     const editBtn = document.getElementById('btn-edit-profile');
-    if (editBtn) editBtn.addEventListener('click', ()=> showProfileEditForm(profile));
+    if (editBtn) editBtn.addEventListener('click', ()=> showProfileEditor(profile));
     wireOwnFriendsSectionButtons();
     wireMyPlaylistButtons();
   } else {
     wireFriendButton(userId, friendInfo);
   }
+}
+
+// ---------- Editing ----------
+const COVER_PRESETS = ['#ff6f91','#ff8a4c','#ffd166','#3ddc97','#2dd4bf','#4f8cff','#7c6cf0','#a78bfa','#e66bd8','#f43f5e','#64748b','#1f2a44'];
+
+// Checks the form and tidies the text. Returns { errors: [...], fields: {...} }
+function validateProfileForm(v){
+  const errors = [];
+  const first = (v.first || '').trim(), last = (v.last || '').trim(), username = (v.username || '').trim();
+  const status = (v.status || '').trim(), bio = (v.bio || '').trim();
+  if (!first) errors.push('Enter your first name.');
+  if (first.length > 30 || last.length > 30) errors.push('Names can be up to 30 characters.');
+  if (username.length < 2 || username.length > 20) errors.push('Your nickname needs 2 to 20 characters.');
+  if (status.length > 60) errors.push('Status can be up to 60 characters.');
+  if (bio.length > 160) errors.push('Bio can be up to 160 characters.');
+  if (v.cover && !safeCoverColor(v.cover)) errors.push('Pick a valid cover colour.');
+  const email = (v.email || '').trim();
+  if (email && !/^\S+@\S+\.\S+$/.test(email)) errors.push("That email address doesn't look right.");
+  if (v.password){
+    if (v.password.length < 6) errors.push('Choose a new password with at least 6 characters.');
+    else if (v.password !== v.password2) errors.push("The two new passwords don't match.");
+  }
+  return { errors, fields: { first_name: first, last_name: last, username, status, bio } };
+}
+
+// Saves everything. Never throws; returns { ok, error?, warnings[], notes[], changedUsername }.
+// The text details are saved even if the picture or colour can't be (e.g. the database update hasn't been run yet).
+async function saveProfileChanges(profile, values, draft){
+  const { errors, fields } = validateProfileForm(values);
+  if (errors.length) return { ok: false, error: errors[0] };
+  if (!currentUser || !supabaseClient) return { ok: false, error: 'Log in to edit your profile.' };
+  const warnings = [], notes = [];
+  const current = (profile && profile.username) || '';
+  const changedUsername = fields.username.toLowerCase() !== current.toLowerCase() || fields.username !== current;
+
+  if (fields.username.toLowerCase() !== current.toLowerCase() && await checkUsernameAvailable(fields.username) === false){
+    return { ok: false, error: 'That nickname is taken. Try another.' };
+  }
+
+  let avatarUrl;                                    // undefined = leave the picture as it is
+  if (draft.avatarBlob){
+    try{ avatarUrl = await uploadAvatar(draft.avatarBlob); }catch(e){ warnings.push(e.message); }
+  } else if (draft.removeAvatar){
+    await deleteAvatarFile();
+    avatarUrl = null;
+  }
+
+  const extras = { cover_color: draft.cover };
+  if (avatarUrl !== undefined) extras.avatar_url = avatarUrl;
+  let { error } = await supabaseClient.from('profiles').update({ ...fields, ...extras }).eq('id', currentUser.id);
+  if (error && /cover_color|avatar_url|column/i.test(error.message || '')){
+    warnings.push('Picture and cover colour need a one-time database update (schema-profile-v2.sql). Everything else was saved.');
+    ({ error } = await supabaseClient.from('profiles').update(fields).eq('id', currentUser.id));
+  }
+  if (error){
+    if (error.code === '23505') return { ok: false, error: 'That nickname is taken. Try another.' };
+    console.error('Profile save failed:', error);
+    return { ok: false, error: "Couldn't save your profile. Please try again." };
+  }
+
+  const newEmail = (values.email || '').trim();
+  if (newEmail && newEmail.toLowerCase() !== (currentUser.email || '').toLowerCase()){
+    const { error: e } = await supabaseClient.auth.updateUser({ email: newEmail });
+    if (e){ console.warn('Email change failed:', e.message); warnings.push("Couldn't change your email: " + (/rate|too many/i.test(e.message || '') ? 'please wait a minute and try again.' : 'please check it and try again.')); }
+    else notes.push(`We sent a confirmation to ${newEmail}. Your email changes once you confirm it.`);
+  }
+  if (values.password){
+    const { error: e } = await setNewPassword(values.password);
+    if (e){ console.warn('Password change failed:', e.message); warnings.push(/different from the old/i.test(e.message || '') ? 'Choose a password you are not already using.' : "Couldn't change your password. Please try again."); }
+    else notes.push('Your password was changed.');
+  }
+
+  await loadMyProfile();
+  return { ok: true, warnings, notes, changedUsername };
+}
+
+function showProfileEditor(profile){
+  const container = document.getElementById('profile-view');
+  if (!container || !currentUser) return;
+  const p = profile || {};
+  const seedName = p.username || myName;
+  const draft = { cover: safeCoverColor(p.cover_color) || defaultCover(seedName), avatarBlob: null, avatarPreview: null, removeAvatar: false };
+  const currentPhoto = safeAvatarUrl(p.avatar_url);
+  const $ = id => document.getElementById(id);
+
+  container.innerHTML = `
+    <div class="pf-editor">
+      <section class="pf-card pf-preview" aria-label="Preview">
+        <div class="pf-cover" id="pe-cover"></div>
+        <div class="pf-head"><div class="pf-avatar-wrap"><div class="pf-avatar" id="pe-avatar"></div></div></div>
+        <div class="pf-body"><h2 class="pf-name" id="pe-preview-name"></h2><div class="pf-username" id="pe-preview-username"></div></div>
+      </section>
+
+      <div class="pe-group">
+        <h4>Picture</h4>
+        <div class="pe-row">
+          <button class="btn btn-secondary btn-sm" id="pe-upload" type="button">📷 Upload a photo</button>
+          <button class="btn btn-ghost btn-sm" id="pe-remove" type="button">Remove</button>
+          <input type="file" id="pe-file" accept="image/*" hidden>
+        </div>
+        <p class="hint">It's cropped to a square. Smaller is fine; we shrink it for you.</p>
+      </div>
+
+      <div class="pe-group">
+        <h4>Cover colour</h4>
+        <div class="pe-swatches" id="pe-swatches" role="radiogroup" aria-label="Cover colour">
+          ${COVER_PRESETS.map(c => `<button class="pe-swatch" type="button" role="radio" aria-checked="false" data-color="${c}" style="background:${c}" aria-label="Colour ${c}"></button>`).join('')}
+          <label class="pe-swatch pe-custom" title="Pick any colour">🎨<input type="color" id="pe-color" value="${draft.cover}"></label>
+        </div>
+      </div>
+
+      <div class="pe-group">
+        <h4>About you</h4>
+        <div class="split pe-split">
+          <div class="field"><label for="pe-first">First name</label><input type="text" id="pe-first" maxlength="30" autocomplete="given-name" value="${escapeHtml(p.first_name || '')}"></div>
+          <div class="field"><label for="pe-last">Last name</label><input type="text" id="pe-last" maxlength="30" autocomplete="family-name" value="${escapeHtml(p.last_name || '')}"></div>
+        </div>
+        <div class="field"><label for="pe-username">Nickname</label><input type="text" id="pe-username" maxlength="20" autocomplete="nickname" autocapitalize="none" spellcheck="false" value="${escapeHtml(p.username || '')}"><p class="hint" id="pe-username-hint">Shown in chat and rooms. Must be unique.</p></div>
+        <div class="field"><label for="pe-status">Status</label><input type="text" id="pe-status" maxlength="60" placeholder="What are you up to?" value="${escapeHtml(p.status || '')}"></div>
+        <div class="field"><label for="pe-bio">Bio</label><input type="text" id="pe-bio" maxlength="160" placeholder="A short bio" value="${escapeHtml(p.bio || '')}"><p class="hint" id="pe-bio-count"></p></div>
+      </div>
+
+      <div class="pe-group">
+        <h4>Account</h4>
+        <div class="field"><label for="pe-email">Email</label><input type="text" id="pe-email" inputmode="email" autocomplete="email" autocapitalize="none" spellcheck="false" value="${escapeHtml(currentUser.email || '')}"><p class="hint">🔒 Only you can see your email. Changing it needs a confirmation from the new address.</p></div>
+        <div class="split pe-split">
+          <div class="field"><label for="pe-pass">New password</label><input type="password" id="pe-pass" autocomplete="new-password" placeholder="Leave blank to keep"></div>
+          <div class="field"><label for="pe-pass2">Confirm</label><input type="password" id="pe-pass2" autocomplete="new-password" placeholder="Type it again"></div>
+        </div>
+      </div>
+
+      <p class="pe-msg" id="pe-msg" role="status" aria-live="polite"></p>
+      <div class="pe-actions">
+        <button class="btn btn-primary" id="pe-save" type="button">Save changes</button>
+        <button class="btn btn-ghost" id="pe-cancel" type="button">Cancel</button>
+      </div>
+    </div>`;
+
+  const val = id => $(id).value;
+  const say = (text, isErr) => { const m = $('pe-msg'); m.textContent = text; m.style.color = isErr ? 'var(--coral-ink)' : 'var(--text-muted)'; };
+  const cleanupPreview = ()=>{ if (draft.avatarPreview){ URL.revokeObjectURL(draft.avatarPreview); draft.avatarPreview = null; } };
+
+  function updatePreview(){
+    $('pe-cover').style.background = coverGradient(draft.cover);
+    const first = val('pe-first').trim(), last = val('pe-last').trim(), uname = val('pe-username').trim();
+    const name = `${first} ${last}`.trim() || uname || 'You';
+    $('pe-preview-name').textContent = name;
+    $('pe-preview-username').textContent = uname ? '@' + uname : '';
+    const av = $('pe-avatar');
+    const photo = draft.removeAvatar ? null : (draft.avatarPreview || currentPhoto);
+    if (photo){ av.style.backgroundImage = `url(${photo})`; av.textContent = ''; av.classList.add('has-photo'); }
+    else { av.style.backgroundImage = ''; av.style.background = nameColor(uname || name); av.textContent = initials(name); av.classList.remove('has-photo'); }
+    document.querySelectorAll('#pe-swatches .pe-swatch[data-color]').forEach(s => s.setAttribute('aria-checked', s.dataset.color === draft.cover ? 'true' : 'false'));
+    $('pe-bio-count').textContent = `${val('pe-bio').length} / 160`;
+  }
+
+  $('pe-upload').addEventListener('click', ()=> $('pe-file').click());
+  $('pe-file').addEventListener('change', async ()=>{
+    const file = $('pe-file').files && $('pe-file').files[0];
+    if (!file) return;
+    say('Preparing your picture…');
+    try{
+      const blob = await processAvatarFile(file);
+      cleanupPreview();
+      draft.avatarBlob = blob; draft.removeAvatar = false; draft.avatarPreview = URL.createObjectURL(blob);
+      say('');
+      updatePreview();
+    }catch(e){ say(e.message || "Couldn't use that picture.", true); }
+    $('pe-file').value = '';
+  });
+  $('pe-remove').addEventListener('click', ()=>{ cleanupPreview(); draft.avatarBlob = null; draft.removeAvatar = true; updatePreview(); });
+  document.querySelectorAll('#pe-swatches .pe-swatch[data-color]').forEach(s => s.addEventListener('click', ()=>{ draft.cover = s.dataset.color; $('pe-color').value = draft.cover; updatePreview(); }));
+  $('pe-color').addEventListener('input', ()=>{ draft.cover = safeCoverColor($('pe-color').value) || draft.cover; updatePreview(); });
+  ['pe-first', 'pe-last', 'pe-bio'].forEach(id => $(id).addEventListener('input', updatePreview));
+
+  let unameTimer = null, unameSeq = 0;
+  $('pe-username').addEventListener('input', ()=>{
+    updatePreview();
+    clearTimeout(unameTimer);
+    const hint = $('pe-username-hint'), name = val('pe-username').trim();
+    hint.style.color = '';
+    if (name.length < 2 || name.toLowerCase() === (p.username || '').toLowerCase()){ unameSeq++; hint.textContent = 'Shown in chat and rooms. Must be unique.'; return; }
+    unameTimer = setTimeout(async ()=>{
+      const seq = ++unameSeq;
+      const free = await checkUsernameAvailable(name);
+      if (seq !== unameSeq) return;
+      if (free === true){ hint.textContent = '✓ That nickname is free'; hint.style.color = 'var(--teal)'; }
+      else if (free === false){ hint.textContent = 'That nickname is taken. Try another.'; hint.style.color = 'var(--coral-ink)'; }
+      else hint.textContent = 'Shown in chat and rooms. Must be unique.';
+    }, 450);
+  });
+
+  $('pe-cancel').addEventListener('click', ()=>{ cleanupPreview(); renderProfile(currentUser.id, myName, true); });
+  $('pe-save').addEventListener('click', async ()=>{
+    const btn = $('pe-save');
+    btn.disabled = true;
+    say('Saving…');
+    const values = { first: val('pe-first'), last: val('pe-last'), username: val('pe-username'), status: val('pe-status'), bio: val('pe-bio'),
+      cover: draft.cover, email: val('pe-email'), password: val('pe-pass'), password2: val('pe-pass2') };
+    const result = await saveProfileChanges(p, values, draft);
+    btn.disabled = false;
+    if (!result.ok){ say(result.error, true); return; }
+    cleanupPreview();
+    Avatars.set(currentUser.id, { url: myProfile && myProfile.avatar_url, cover: myProfile && myProfile.cover_color });
+    refreshAvatars();
+    if (typeof refreshMyPresence === 'function') refreshMyPresence();
+    if (result.changedUsername && myProfile && typeof applyNewDisplayName === 'function') applyNewDisplayName(myProfile.username);
+    toast('Profile updated ✨');
+    [...result.notes, ...result.warnings].forEach((m, i) => setTimeout(()=> toast(m), 600 + i * 3200));
+    renderProfile(currentUser.id, myName, true);
+  });
+
+  updatePreview();
 }
 
 // ---------- Entry-hub wiring ----------

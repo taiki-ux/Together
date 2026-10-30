@@ -185,7 +185,18 @@ let roomChannel = null;
 //   - another session of ME that shows up AFTER I'm in           -> it's the newer one: this tab steps aside
 //   - a second session of someone else's account                  -> list only the newest
 const ignoredPeers = new Set();
-let presenceReady = false;      // false until the first presence snapshot is processed; later arrivals are "live"
+let presenceReady = false;
+let myJoinedAt = 0;
+
+// What I announce to the room. Re-sent whenever my name or picture changes.
+function presencePayload(){
+  return { peerId: myId, name: myName, userId: myUserId(), guestKey: myGuestKey(), joinedAt: myJoinedAt,
+           avatarUrl: (typeof myAvatarUrl === 'function') ? myAvatarUrl() : null };
+}
+function refreshMyPresence(){
+  if (!roomChannel || !myId) return;
+  try{ roomChannel.track(presencePayload()); }catch(e){ console.warn('Could not refresh presence:', e); }
+}      // false until the first presence snapshot is processed; later arrivals are "live"
 
 function myUserId(){ return (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null; }
 // Guests have no account id, so each tab gets a random key (kept across reloads of that tab).
@@ -226,6 +237,10 @@ function acceptPresenceEntry(entry, isLive){
     }
   }
   participants[id] = { ...(participants[id] || {}), name: String(entry.name || 'Someone').slice(0, 40), userId: uid, identity, joinedAt: entry.joinedAt || 0 };
+  if (uid && typeof Avatars !== 'undefined'){                       // their picture arrives with them (only our own storage addresses are trusted)
+    const url = safeAvatarUrl(entry.avatarUrl);
+    if (url) Avatars.set(uid, { url });
+  }
   return true;
 }
 
@@ -248,6 +263,7 @@ function joinRoomPresence(){
   ignoredPeers.clear();
   presenceReady = false;
   const joinedAt = Date.now();
+  myJoinedAt = joinedAt;
   roomChannel = supabaseClient.channel(`room:${roomCode}`, { config: { presence: { key: myId } } });
   roomChannel
     .on('presence', { event:'sync' }, ()=>{
@@ -271,6 +287,7 @@ function joinRoomPresence(){
     .on('presence', { event:'leave' }, ({ leftPresences })=>{
       leftPresences.forEach(p=>{
         if (p.peerId === myId) return;
+        if (isInPresence(p.peerId)) return;              // they just re-announced (new picture / name), they didn't leave
         ignoredPeers.delete(p.peerId);
         removePeer(p.peerId);
       });
@@ -279,7 +296,7 @@ function joinRoomPresence(){
       if (window.onKnockReceived) window.onKnockReceived(payload);
     })
     .subscribe(async (status)=>{
-      if (status === 'SUBSCRIBED') await roomChannel.track({ peerId: myId, name: myName, userId: myUserId(), guestKey: myGuestKey(), joinedAt });
+      if (status === 'SUBSCRIBED') await roomChannel.track(presencePayload());
     });
 }
 function leaveRoomPresence(){
@@ -500,6 +517,10 @@ function renderHubPresence(){
       </div>
     `;
   }).join('');
+  el.querySelectorAll('.avatar[data-peer]').forEach(av=>{
+    const pid = av.dataset.peer;
+    paintAvatar(av, userIdOf(pid), participants[pid] ? participants[pid].name : '?');
+  });
   el.querySelectorAll('[data-hub-avatar]').forEach(row=>{
     row.style.cursor = 'pointer';
     row.addEventListener('click', ()=>{ if (typeof openProfileForPeer === 'function') openProfileForPeer(row.dataset.hubAvatar); });

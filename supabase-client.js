@@ -209,6 +209,18 @@ async function requestPasswordReset(email) {
   }
 }
 
+// Checks the 6-digit code from the reset email. No link, no redirect, so it can't fail on a wrong
+// website address. On success this signs them in (a recovery session) so the new password can be saved.
+async function verifyRecoveryCode(email, code) {
+  if (!supabaseClient) return { error: { message: "Account service isn't available right now." } };
+  try {
+    return await supabaseClient.auth.verifyOtp({ email, token: code, type: 'recovery' });
+  } catch (err) {
+    console.error('Unexpected code-check error:', err);
+    return { error: err };
+  }
+}
+
 // Used on the "choose a new password" screen (the reset link has already signed them in).
 async function setNewPassword(password) {
   if (!supabaseClient) return { error: { message: "Account service isn't available right now." } };
@@ -266,6 +278,7 @@ window.loadMyProfile = loadMyProfile;
 window.signUpWithProfile = signUpWithProfile;
 window.signInWithEmail = signInWithEmail;
 window.requestPasswordReset = requestPasswordReset;
+window.verifyRecoveryCode = verifyRecoveryCode;
 window.setNewPassword = setNewPassword;
 window.checkUsernameAvailable = checkUsernameAvailable;
 window.signOutUser = signOutUser;
